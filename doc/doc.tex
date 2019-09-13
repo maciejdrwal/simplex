@@ -1,0 +1,133 @@
+\RequirePackage[l2tabu, orthodox]{nag}
+
+\documentclass[10pt]{article} 
+
+% Useful LaTeX packages.
+\usepackage{amsmath} 
+\usepackage[a4paper]{geometry}
+%\usepackage[a4paper,left=2.8cm,right=2.8cm,top=2.5cm,bottom=2.5cm]{geometry}
+\usepackage{graphicx} 
+\usepackage{microtype} 
+\usepackage{siunitx} 
+\usepackage{booktabs} 
+\usepackage[colorlinks=false, pdfborder={0 0 0}]{hyperref} 
+\usepackage{cleveref}
+
+\usepackage[utf8]{inputenc} % cp1250, latin2
+\usepackage[T1]{fontenc} 
+\usepackage{indentfirst} 
+\usepackage{amssymb} 
+\usepackage{amsthm} 
+\usepackage{algorithm} 
+\usepackage{algpseudocode} 
+\usepackage{cite} 
+\usepackage{needspace}
+\usepackage{color}
+\usepackage{enumerate}
+
+%\usepackage[MeX]{polski}
+%\usepackage{tikz}
+%\usetikzlibrary{arrows,shapes}
+
+\newcommand\entry[1]{\needspace{5\baselineskip} 
+\bigskip
+\bigskip \centerline{\bf #1} 
+\bigskip
+\bigskip}
+
+\newtheorem{theorem}{Theorem} 
+\newtheorem{lemma}{Lemma} 
+\newtheorem{definition}{Definition} 
+\newtheorem{example}{Example} 
+\newtheorem{claim}{Claim} 
+\newtheorem{proposition}{Proposition} 
+\newtheorem{corollary}{Corollary} 
+\newtheorem{problem}{Problem}
+
+%\pagestyle{empty}
+\title{} 
+\author{} 
+\date{}
+
+\begin{document}
+
+\maketitle
+
+\section{Outline of the (Revised) Simplex Algorithm.}
+
+A standard form LP is:
+
+\begin{align}
+	\textrm{min } & {\bf c}^T {\bf x} \label{lp:obj} \\
+	\textrm{st. } & {\bf A} {\bf x} = {\bf b}, \label{lp:Axeqb} \\
+	              & {\bf x} \geq 0. \label{lp:nonneg}
+\end{align}
+
+Matrix ${\bf A}$ has $n$ columns and $m$ rows, and $n > m$.
+
+Usually the problem is originally defined with the use of both equality and inequality constraints, as well as special inequality constraints called {\em bounds}, i.e., instead of \eqref{lp:Axeqb} we have:
+
+\begin{align}
+	 {\bf A}^E {\bf x} = {\bf b}^E, \\
+	 {\bf A}^L {\bf x} \leq {\bf b}^L, \label{lp:ineq}\\
+	 {\bf l} \leq {\bf x} \leq {\bf u}. \label{lp:bounds}
+\end{align}
+
+Note that \eqref{lp:ineq}--\eqref{lp:bounds} can be transformed into constraint of type \eqref{lp:Axeqb} by extending the vector of variables ${\bf x}$ by {\em slack} variables and adding them to the lefthand side of \eqref{lp:ineq}. Also the inequalities of type ``greater than'' can be replaced by that of type ``less than'' by multiplying both sides by -1. Thus we assume that the problem is transformed into the standard form \eqref{lp:obj}--\eqref{lp:nonneg} before we run Simplex.
+
+\medskip
+{\bf Terminology}
+
+A {\em basis} $B$ is an ordered set of $m$ linearly independent columns. By ${\bf A}_B$ we denote the matrix consisting of columns in $B$, and by ${\bf c}_B$ we denote the vector of coefficients restricted to the elements of ${\bf c}$ that correspond to the indices of columns in ${B}$. We write ${\bf A}_N$ to denote the matrix consisting of non-basic columns, and, similarly, ${\bf c}_N$ to denote the vector of non-basic coefficients.
+
+A {\em bfs} (basic feasible solution) is a vector ${\bf x} = ({\bf x}_B, {\bf x}_N)$, where ${\bf x_N}$ is a zero vector and ${\bf x}_B$ is a solution of the system ${\bf A}_B {\bf x}_B = {\bf b}$ that satisfies ${\bf x}_B \geq 0$. Such a vector corresponds to a vertex of polytope defined by the set of LP constraints.
+
+A bfs is {\em degenerate} if ${\bf x}_B$ contains zero. This means that the vertex corresponding to this bfs also can be obtained by taking another bfs (i.e., the same vertex is obtainable as an intersection of different choices of polytope facets).
+
+
+\medskip
+{\bf Phase I}
+
+The purpose of the Phase I is to determine an initial {\em bfs}. There are two cases:
+\begin{enumerate}
+	\item Initially, all constraints were inequalities of the form \eqref{lp:ineq}, with ${\bf b}^L \geq 0$. Then we have introduced $m$ slack variables when transforming them into equality constraints. Such slack variables also define a basis, which clearly is feasible. We proceed directly to Phase II from this point.
+	\item No initial basis is known, but we can add $m$ artificial variables that would form a basis.
+\end{enumerate}
+
+Assuming that the second case occurs, we add to each constraint an artificial variable $x^{a}_i$, $i = 1, \ldots, m$, and solve an auxiliary LP with an objective function:
+$$
+	\sum_{i=1}^m x^{a}_i,
+$$
+and the set of constraints:
+$$
+	{\bf A} {\bf x} + {\bf I} {\bf x}^a = {\bf b}, \;\;\; {\bf x}, {\bf x}^a \geq 0.
+$$
+
+The simplex method itself can be used for solving this LP with initial bfs ${\bf x}^a_B = {\bf b}$.
+
+If the auxiliary LP has optimal value greater than zero, then the original LP \eqref{lp:obj}--\eqref{lp:nonneg} is infeasible, and we stop at this point.
+If the original LP is feasible, then the auxiliary LP has optimal value $0$. The basis corresponding to the solution of auxiliary LP should now consist entirely of non-artificial variables, and can be used as an initial basis in Phase II. If otherwise some artificial variable remains in the basis corresponding to the optimal solution of value $0$, then this variable can be moved out from the basis, and replaced by a variable corresponding to any nonzero element in the tableaux row corresponding to the artificial variable. If there are no nonzero elements in that row, then the original matrix ${\bf A}$ does not have a full rank, and the redundant row must be removed.
+
+\medskip
+{\bf Phase II}
+
+In this phase we solve the original LP \eqref{lp:obj}--\eqref{lp:nonneg}, given an initial bfs, obtained in Phase I.
+
+\medskip
+{\bf The Algorithm}
+\begin{enumerate}
+	\item Given a basis $B$, construct $m$-by-$m$ matrix ${\bf A}_B$.
+	\item Compute ${\bf x} = {\bf A}_B^{-1} {\bf b}$.
+	\item Compute ${\bf y} = ({\bf A}_B^T)^{-1} {\bf c}_B$.
+	\item Compute ${\bf s} = {\bf c}_N - {\bf A}_N^T {\bf y}$.
+	\item If ${\bf s} \geq 0$ then STOP. Return optimal value $({\bf x}_B, {\bf x}_N = {\bf 0})$.
+	\item Select entering index $j$, such that ${\bf s}_j < 0$ and $j$ is the smallest.
+	\item Compute ${\bf d} = {\bf A}_B^{-1} {\bf A}_j$. 
+	\item If ${\bf d} \leq 0$ then STOP. Problem is unbounded.
+	\item Select leaving index $i$, to be the smallest one in the set $\min \{ \frac{x_i}{d_i}, \; d_i > 0 \}$.
+	\item Let $B \leftarrow B \setminus \{ i \} \cup \{ j \}$. Go to step 1.
+\end{enumerate}
+
+The rules for selecting entering and leaving indices are called {\em Bland's rules}.
+
+\end{document} 

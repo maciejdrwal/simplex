@@ -4,7 +4,27 @@ Implementation of basic LP solver using simplex algorithm. It supports parsing .
 
 ## Compilation
 
-Run `make` command (macOS, Linux). Note that BLAS/LAPACK is required (e.g., Accelerate Framework on macOS).
+Run `make` command (macOS, Linux). 
+
+**Note** that BLAS and LAPACK are required. 
+
+### BLAS/LAPACK on macOS
+
+It is enough to link to Accelerate Framework
+
+### BLAS/LAPACK on Linux
+
+On Linux it is recommended to build OpenBLAS from sources.
+
+`git clone https://github.com/xianyi/OpenBLAS.git`
+
+Change into cloned `OpenBLAS`, and run
+
+`make FC=gfortran NO_LAPACK=0`
+
+`make PREFIX=../simplex/extern install`
+
+`export LD_LIBRARY_PATH=$LD_LIBRARY_PATH:path_to_libopenblas`
 
 ## Use
 

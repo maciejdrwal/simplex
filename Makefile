@@ -26,19 +26,19 @@ obj = $(src:.cpp=.o)
 dep = $(obj:.o=.d)
 
 $(TARGET) : $(obj)
-    $(CXX) -o $@ $^ $(LDFLAGS)
+	$(CXX) -o $@ $^ $(LDFLAGS)
 
 -include $(dep)
 
 $.d : $.cpp
-    @$(CXX) $(CXXFLAGS) $< -MM -MT $(@:.d=.o) >$@
+	@$(CXX) $(CXXFLAGS) $< -MM -MT $(@:.d=.o) >$@
 
 .PHONY: clean
 clean:
-    rm -rf $(obj) $(TARGET)
+	rm -rf $(obj) $(TARGET)
 
 .PHONY: cleandep
 cleandep:
-    rm -rf $(dep)
+	rm -rf $(dep)
 
 print-%  : ; @echo $* = $($*)

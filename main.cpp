@@ -55,7 +55,7 @@ int main(int argc, char ** argv)
                 cout << "Aborting." << endl;
                 return 1;
             }
-		}
+        }
         else if (file_format == MPS_FILE) {
             if (parse_input_line_mps(line.c_str(), &lp) != 0) {
                 fin.close();
@@ -68,9 +68,9 @@ int main(int argc, char ** argv)
     fin.close();
     cout << "Reading file done.\n" << endl;
     
-	lp.solve();
+    lp.solve();
     lp.write("sol_test.xml");
-	cout << "Exiting program." << endl;
-	
+    cout << "Exiting program." << endl;
+    
     return 0;
 }

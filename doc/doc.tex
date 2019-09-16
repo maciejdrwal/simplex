@@ -58,9 +58,9 @@
 A standard form LP is:
 
 \begin{align}
-	\textrm{min } & {\bf c}^T {\bf x} \label{lp:obj} \\
-	\textrm{st. } & {\bf A} {\bf x} = {\bf b}, \label{lp:Axeqb} \\
-	              & {\bf x} \geq 0. \label{lp:nonneg}
+    \textrm{min } & {\bf c}^T {\bf x} \label{lp:obj} \\
+    \textrm{st. } & {\bf A} {\bf x} = {\bf b}, \label{lp:Axeqb} \\
+                  & {\bf x} \geq 0. \label{lp:nonneg}
 \end{align}
 
 Matrix ${\bf A}$ has $n$ columns and $m$ rows, and $n > m$.
@@ -68,9 +68,9 @@ Matrix ${\bf A}$ has $n$ columns and $m$ rows, and $n > m$.
 Usually the problem is originally defined with the use of both equality and inequality constraints, as well as special inequality constraints called {\em bounds}, i.e., instead of \eqref{lp:Axeqb} we have:
 
 \begin{align}
-	 {\bf A}^E {\bf x} = {\bf b}^E, \\
-	 {\bf A}^L {\bf x} \leq {\bf b}^L, \label{lp:ineq}\\
-	 {\bf l} \leq {\bf x} \leq {\bf u}. \label{lp:bounds}
+     {\bf A}^E {\bf x} = {\bf b}^E, \\
+     {\bf A}^L {\bf x} \leq {\bf b}^L, \label{lp:ineq}\\
+     {\bf l} \leq {\bf x} \leq {\bf u}. \label{lp:bounds}
 \end{align}
 
 Note that \eqref{lp:ineq}--\eqref{lp:bounds} can be transformed into constraint of type \eqref{lp:Axeqb} by extending the vector of variables ${\bf x}$ by {\em slack} variables and adding them to the lefthand side of \eqref{lp:ineq}. Also the inequalities of type ``greater than'' can be replaced by that of type ``less than'' by multiplying both sides by -1. Thus we assume that the problem is transformed into the standard form \eqref{lp:obj}--\eqref{lp:nonneg} before we run Simplex.
@@ -90,17 +90,17 @@ A bfs is {\em degenerate} if ${\bf x}_B$ contains zero. This means that the vert
 
 The purpose of the Phase I is to determine an initial {\em bfs}. There are two cases:
 \begin{enumerate}
-	\item Initially, all constraints were inequalities of the form \eqref{lp:ineq}, with ${\bf b}^L \geq 0$. Then we have introduced $m$ slack variables when transforming them into equality constraints. Such slack variables also define a basis, which clearly is feasible. We proceed directly to Phase II from this point.
-	\item No initial basis is known, but we can add $m$ artificial variables that would form a basis.
+    \item Initially, all constraints were inequalities of the form \eqref{lp:ineq}, with ${\bf b}^L \geq 0$. Then we have introduced $m$ slack variables when transforming them into equality constraints. Such slack variables also define a basis, which clearly is feasible. We proceed directly to Phase II from this point.
+    \item No initial basis is known, but we can add $m$ artificial variables that would form a basis.
 \end{enumerate}
 
 Assuming that the second case occurs, we add to each constraint an artificial variable $x^{a}_i$, $i = 1, \ldots, m$, and solve an auxiliary LP with an objective function:
 $$
-	\sum_{i=1}^m x^{a}_i,
+    \sum_{i=1}^m x^{a}_i,
 $$
 and the set of constraints:
 $$
-	{\bf A} {\bf x} + {\bf I} {\bf x}^a = {\bf b}, \;\;\; {\bf x}, {\bf x}^a \geq 0.
+    {\bf A} {\bf x} + {\bf I} {\bf x}^a = {\bf b}, \;\;\; {\bf x}, {\bf x}^a \geq 0.
 $$
 
 The simplex method itself can be used for solving this LP with initial bfs ${\bf x}^a_B = {\bf b}$.
@@ -116,16 +116,16 @@ In this phase we solve the original LP \eqref{lp:obj}--\eqref{lp:nonneg}, given 
 \medskip
 {\bf The Algorithm}
 \begin{enumerate}
-	\item Given a basis $B$, construct $m$-by-$m$ matrix ${\bf A}_B$.
-	\item Compute ${\bf x} = {\bf A}_B^{-1} {\bf b}$.
-	\item Compute ${\bf y} = ({\bf A}_B^T)^{-1} {\bf c}_B$.
-	\item Compute ${\bf s} = {\bf c}_N - {\bf A}_N^T {\bf y}$.
-	\item If ${\bf s} \geq 0$ then STOP. Return optimal value $({\bf x}_B, {\bf x}_N = {\bf 0})$.
-	\item Select entering index $j$, such that ${\bf s}_j < 0$ and $j$ is the smallest.
-	\item Compute ${\bf d} = {\bf A}_B^{-1} {\bf A}_j$. 
-	\item If ${\bf d} \leq 0$ then STOP. Problem is unbounded.
-	\item Select leaving index $i$, to be the smallest one in the set $\min \{ \frac{x_i}{d_i}, \; d_i > 0 \}$.
-	\item Let $B \leftarrow B \setminus \{ i \} \cup \{ j \}$. Go to step 1.
+    \item Given a basis $B$, construct $m$-by-$m$ matrix ${\bf A}_B$.
+    \item Compute ${\bf x} = {\bf A}_B^{-1} {\bf b}$.
+    \item Compute ${\bf y} = ({\bf A}_B^T)^{-1} {\bf c}_B$.
+    \item Compute ${\bf s} = {\bf c}_N - {\bf A}_N^T {\bf y}$.
+    \item If ${\bf s} \geq 0$ then STOP. Return optimal value $({\bf x}_B, {\bf x}_N = {\bf 0})$.
+    \item Select entering index $j$, such that ${\bf s}_j < 0$ and $j$ is the smallest.
+    \item Compute ${\bf d} = {\bf A}_B^{-1} {\bf A}_j$. 
+    \item If ${\bf d} \leq 0$ then STOP. Problem is unbounded.
+    \item Select leaving index $i$, to be the smallest one in the set $\min \{ \frac{x_i}{d_i}, \; d_i > 0 \}$.
+    \item Let $B \leftarrow B \setminus \{ i \} \cup \{ j \}$. Go to step 1.
 \end{enumerate}
 
 The rules for selecting entering and leaving indices are called {\em Bland's rules}.

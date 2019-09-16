@@ -15,6 +15,8 @@ using namespace std;
 
 int main(int argc, char ** argv) 
 {
+    cout.precision(4);
+    
     if (argc < 2) {
         cout << "You must provide a file name." << endl;
         return 1;
@@ -65,7 +67,7 @@ int main(int argc, char ** argv)
 
     fin.close();
     cout << "Reading file done.\n" << endl;
-	
+    
 	lp.solve();
     lp.write("sol_test.xml");
 	cout << "Exiting program." << endl;

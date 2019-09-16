@@ -1,17 +1,25 @@
 TARGET = simplex
+DEBUG = 1
 OS := $(shell uname)
 
 ifeq ($(OS), Darwin)
 CXX = clang++
-CXXFLAGS = -Wno-format -O3
+CXXFLAGS = -Wno-format -std=c++14
 LDFLAGS = -v -framework Accelerate
 endif
 
 ifeq ($(OS), Linux)
 CXX = g++
-CXXFLAGS = -Wno-format -I./extern/include/
-LDLAGS = -v -L./extern/lib/ -lblas -llapack -llapacke
+CXXFLAGS = -Wno-format -std=c++14 -I../extern/include/
+LDFLAGS = -v -L../extern/lib/ -lopenblas
 endif
+
+ifeq ($(DEBUG), 1)
+CXXFLAGS += -g -DDEBUG
+else
+CXXFLAGS += -O2
+endif
+
 
 src = $(wildcard *.cpp)
 obj = $(src:.cpp=.o)
@@ -34,4 +42,3 @@ cleandep:
 	rm -rf $(dep)
 
 print-%  : ; @echo $* = $($*)
-

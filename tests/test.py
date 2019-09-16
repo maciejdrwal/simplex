@@ -1,15 +1,14 @@
 import sys, os
 import subprocess
+from pathlib import Path
 from xml.dom import minidom
 from utils import *
 
-SCRIPT_PATH = os.path.dirname(__file__)
+SCRIPT_PATH = os.path.dirname(Path(__file__).absolute())
 DATA_DIR = os.path.join(SCRIPT_PATH, "..", "data")
 
-EXEC_PATH = os.path.join(SCRIPT_PATH, "..", "src", "simplex")
+EXEC_PATH = os.path.join(SCRIPT_PATH, "..", "simplex")
 CPLEX_PATH = "/Users/maciek/Applications/IBM/ILOG/CPLEX_Studio127/cplex/bin/x86-64_osx/cplex"
-
-os.chdir(SCRIPT_PATH)
 
 def extract_sol_from_xml(path):
     sol = dict()
@@ -57,7 +56,7 @@ def test_compare_with_cplex():
         else:
             failure_count += 1
             
-        test_cases.append((filename, objective1, objective2))
+        test_cases.append((os.path.basename(filename), objective1, objective2))
         
     print("\nSuccess Count:", success_count, "\nFailure Count:", failure_count)
     print(test_cases)

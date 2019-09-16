@@ -1,0 +1,22 @@
+/ This is not solved correctly at the moment...
+
+Maximize
+  obj: s
+  
+Subject To:
+  C1: x12 - x23 - x24 - x25 = 0
+  C2: x24 - x45 - x46 = 0
+  C3: x13 + x23 - x35 = 0
+  C4: x25 + x35 + x45 - x56 = 0
+  C5: s - x12 - x13 = 0
+Bounds
+  0 <= x12 <= 10
+  0 <= x13 <= 25
+  0 <= x23 <= 35
+  0 <= x24 <= 20
+  0 <= x25 <= 15
+  0 <= x35 <= 35
+  0 <= x45 <= 40
+  0 <= x46 <= 30
+  0 <= x56 <= 20  
+End

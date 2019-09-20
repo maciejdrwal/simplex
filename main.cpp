@@ -16,6 +16,7 @@ using namespace std;
 int main(int argc, char ** argv) 
 {
     cout.precision(4);
+    cout.setf(ios_base::showpoint);
     
     if (argc < 2) {
         cout << "You must provide a file name." << endl;
@@ -33,8 +34,6 @@ int main(int argc, char ** argv)
         return 1;
     }
     
-    LinearProgram lp;
-    
     ifstream fin;
     fin.open(argv[1]);
     
@@ -42,34 +41,51 @@ int main(int argc, char ** argv)
         cout << "Invalid input file name." << endl;
         return 1;
     }
-        
-    string line;
-    
-    while (fin) {        
-        getline(fin, line);
-        line += "\n";
-        
-        if (file_format == LP_FILE) {            
-            if (parse_input_line_lp(line.c_str(), &lp) != 0) {
-                fin.close();
-                cout << "Aborting." << endl;
-                return 1;
-            }
-        }
-        else if (file_format == MPS_FILE) {
-            if (parse_input_line_mps(line.c_str(), &lp) != 0) {
-                fin.close();
-                cout << "Aborting." << endl;
-                return 1;
-            }
-        }
-    }
 
+
+    // Read whole input file instead of separate lines
+
+    //std::stringstream buffer;
+    //buffer << fin.rdbuf();
+
+    // alternative method:
+    fin.seekg(0, ios::end);
+    size_t size = fin.tellg();
+    string buffer(size, ' ');
+    fin.seekg(0);
+    fin.read(&buffer[0], size);
     fin.close();
     cout << "Reading file done.\n" << endl;
+
+    LinearProgram lp;
+        
+    // string line;
     
-    lp.solve();
-    lp.write("sol_test.xml");
+    // while (fin) {        
+    //     getline(fin, line);
+    //     line += "\n";
+        
+    //     if (file_format == LP_FILE) {            
+    //         if (parse_input_line_lp(line.c_str(), &lp) != 0) {
+    //             fin.close();
+    //             cout << "Aborting." << endl;
+    //             return 1;
+    //         }
+    //     }
+    //     else if (file_format == MPS_FILE) {
+    //         if (parse_input_line_mps(line.c_str(), &lp) != 0) {
+    //             fin.close();
+    //             cout << "Aborting." << endl;
+    //             return 1;
+    //         }
+    //     }
+    // }
+
+    if (run_parser_lp(buffer, lp)) {
+        lp.solve();
+        lp.write("sol_test.xml");
+    }
+    
     cout << "Exiting program." << endl;
     
     return 0;

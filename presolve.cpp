@@ -1,9 +1,14 @@
+// Copyright (C) 2017-2019 Maciej Drwal
+// 
+// Permission is granted to copy and distribute verbatim copies and modified
+// versions of this file, provided that the copyright notice and this permission
+// notice are preserved on all copies and modified versions of this file.
+// 
+
 #include <map>
 
 #include "presolve.h"
-
-#define _abs(x) ((x) < 0.0 ? -(x) : (x))
-#define _isfloatzero(x) (_abs(x) < 1e-9 ? true : false)
+#include "utils.h"
 
 void apply_shifts(LinearProgram * lp) {
     // printf("presolve: variables -> indices:\n");

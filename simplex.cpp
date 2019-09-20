@@ -310,8 +310,8 @@ int LinearProgram::simplex(set<int> & arg_basis)
     while (iteration_count < iteration_limit) {
         iteration_count++;
         cout << "\nSIMPLEX iteration: " << iteration_count << endl;
-        cout << "Basis: ";
-        print_vector<int>(basis.data(), basis.size());
+        // cout << "Basis: ";
+        // print_vector<int>(basis.data(), basis.size());
         
         // Split the matrix A into basis matrix (A_B) and non-basis matrix (A_N).
         int jB = 0, jN = 0;
@@ -326,24 +326,24 @@ int LinearProgram::simplex(set<int> & arg_basis)
             jN++;
         }
         
-        cout << "A_B=\n";
-        print_matrix(matrix_A_B, M, M);
-        cout << "A_N=\n";
-        print_matrix(matrix_A_N, M, N-M);
-        cout << "c_B=\n";
-        print_vector<double>(vector_c_B, M);
-        cout << "c_N=\n";
-        print_vector<double>(vector_c_N, N - M);
+        // cout << "A_B=\n";
+        // print_matrix(matrix_A_B, M, M);
+        // cout << "A_N=\n";
+        // print_matrix(matrix_A_N, M, N-M);
+        // cout << "c_B=\n";
+        // print_vector<double>(vector_c_B, M);
+        // cout << "c_N=\n";
+        // print_vector<double>(vector_c_N, N - M);
     
         // Compute x = A_B^{-1} * b and y = (A_B^T)^{-1} * c_B
         memcpy(vector_bx, vector_b, M * sizeof(double));
         memcpy(vector_cy, vector_c_B, M * sizeof(double));
         lineq_solve(matrix_A_B, vector_bx, vector_cy);
     
-        cout << "solved x=\n";
-        print_vector<double>(vector_bx, M);
-        cout << "solved y=\n";
-        print_vector<double>(vector_cy, M);
+        // cout << "solved x=\n";
+        // print_vector<double>(vector_bx, M);
+        // cout << "solved y=\n";
+        // print_vector<double>(vector_cy, M);
     
         // Pricing: s = c_N - (A_N)^T * y        
         // Multiply matrix by vector: y = alpha * A * x + beta * y.
@@ -354,8 +354,8 @@ int LinearProgram::simplex(set<int> & arg_basis)
     
         // Now vector_c_N contains the result s.
     
-        cout << "solved s=\n";
-        print_vector<double>(vector_c_N, N - M);
+        // cout << "solved s=\n";
+        // print_vector<double>(vector_c_N, N - M);
     
         // Bland's rule for pivoting.
         // 1) Choose entering index to be lexicographically first with s_j < 0.
@@ -423,8 +423,8 @@ int LinearProgram::simplex(set<int> & arg_basis)
         // Solve: A_B * d = A(entering_index). Note that matrix_A_B already contains LU factors.
         lineq_solve(matrix_A_B, vector_cy, NULL, false);
 
-        cout << "solved d=\n";
-        print_vector<double>(vector_cy, M);
+        // cout << "solved d=\n";
+        // print_vector<double>(vector_cy, M);
         
         int min_i = -1;
         double min_lbd = numeric_limits<double>::max();

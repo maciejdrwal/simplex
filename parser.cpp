@@ -9,7 +9,6 @@
 #include <stdlib.h>
 #include <string.h>
 #include <ctype.h>
-#include <sstream>
 #include <memory>
 
 #include "parser.h"
@@ -168,8 +167,9 @@ int parse_input_line_lp(const char * buffer, LinearProgram * lp)
                 // add new constraint information to the lp object
                 strcpy(term, contents_ptr + strspn(contents_ptr, "<>="));
                 
-                auto constr_ptr = make_shared<Constraint>(*contents_ptr, atof(term), constr_name_coeff);
+                auto constr_ptr = make_shared<Constraint>(*contents_ptr, atof(term));
                 lp->constraints.emplace(constr_name, constr_ptr);
+                lp->constraints[constr_name]->name_coeff = constr_name_coeff;
                 
                 // update set of defined variables if necessary
                 for (map<string, double>::iterator it = constr_name_coeff.begin(); it != constr_name_coeff.end(); ++it) {
@@ -238,8 +238,10 @@ int parse_input_line_lp(const char * buffer, LinearProgram * lp)
                 else if (lbf > 0.0) {
                     // add ordinary constraint
                     constr_name_coeff[var_name] = 1.0;                    
-                    auto constr_ptr = make_shared<Constraint>('>', lbf, constr_name_coeff);
-                    lp->constraints.emplace(string("#LBOUND") + tostr<int>(bounds_count++), constr_ptr);
+                    auto constr_ptr = make_shared<Constraint>('>', lbf);
+                    constr_name = string("#LBOUND") + tostr<int>(bounds_count++);
+                    lp->constraints.emplace(constr_name, constr_ptr);
+                    lp->constraints[constr_name]->name_coeff = constr_name_coeff;
                     
                     constr_name_coeff.clear();
                 }
@@ -253,8 +255,10 @@ int parse_input_line_lp(const char * buffer, LinearProgram * lp)
                 }
                 //add ordinary constraint
                 constr_name_coeff[var_name] = 1.0;
-                auto constr_ptr = make_shared<Constraint>(_type, ubf, constr_name_coeff);
-                lp->constraints.emplace(string("#UBOUND") + tostr<int>(bounds_count++), constr_ptr);
+                auto constr_ptr = make_shared<Constraint>(_type, ubf);
+                constr_name = string("#UBOUND") + tostr<int>(bounds_count++);
+                lp->constraints.emplace(constr_name, constr_ptr);
+                lp->constraints[constr_name]->name_coeff = constr_name_coeff;
                 
                 constr_name_coeff.clear();
             }
@@ -328,8 +332,9 @@ int parse_input_line_mps(const char *buffer, LinearProgram *lp)
         else {
             char _type = row_type[0] == 'L' ? '<' : (row_type[0] == 'G' ? '>' : '=');
             if (_type != '=') lp->set_all_inequalities(false);
-            auto constr_ptr = make_shared<Constraint>(_type, 0.0, constr_name_coeff);
+            auto constr_ptr = make_shared<Constraint>(_type, 0.0);
             lp->constraints.emplace(row_name1, constr_ptr);
+            lp->constraints[row_name1]->name_coeff = constr_name_coeff;
         }
         return 0;
 
@@ -436,8 +441,10 @@ int parse_input_line_mps(const char *buffer, LinearProgram *lp)
         
         // if bound is positive, then a simple constraint is added
         if (f1 > 0.0) {
-            auto constr_ptr = make_shared<Constraint>(_type, f1, _constr_name_coeff);
-            lp->constraints.emplace(string("#BOUND") + tostr<int>(bounds_count++), constr_ptr);
+            auto constr_ptr = make_shared<Constraint>(_type, f1);
+            constr_name = string("#BOUND") + tostr<int>(bounds_count++);
+            lp->constraints.emplace(constr_name, constr_ptr);
+            lp->constraints[constr_name]->name_coeff = _constr_name_coeff;
         }
         
         return 0;

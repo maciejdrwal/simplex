@@ -1,12 +1,15 @@
 # simplex
 
-Implementation of basic LP solver using simplex algorithm. It supports parsing .lp and .MPS input file formats.
+Implementation of LP solver based on simplex algorithm. It supports parsing .lp and .MPS input file formats.
 
 ## Compilation
 
 Run `make` command (macOS, Linux). 
 
-**Note** that BLAS and LAPACK are required. 
+## External dependencies
+
+* BLAS/LAPACK
+* Boost Spirit X3
 
 ### BLAS/LAPACK on macOS
 
@@ -25,6 +28,10 @@ Change into cloned `OpenBLAS`, and run
 `make PREFIX=path_to_simplex/extern install`
 
 `export LD_LIBRARY_PATH=$LD_LIBRARY_PATH:path_to_libopenblas`
+
+### Boost Spirit X3
+
+Unzip and put `boost_1_71_0` (or later) into `extern/` directory (bo build/linking is required for Spirit).
 
 ## Use
 

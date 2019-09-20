@@ -4,13 +4,13 @@ OS := $(shell uname)
 
 ifeq ($(OS), Darwin)
 CXX = clang++
-CXXFLAGS = -Wno-format -std=c++14
+CXXFLAGS = -Wno-format -std=c++14 -I./extern/boost_1_71_0/
 LDFLAGS = -v -framework Accelerate
 endif
 
 ifeq ($(OS), Linux)
 CXX = g++
-CXXFLAGS = -Wno-format -std=c++14 -I../extern/include/
+CXXFLAGS = -Wno-format -std=c++14 -I./extern/include/ -I./extern/boost_1_71_0/
 LDFLAGS = -v -L../extern/lib/ -lopenblas
 endif
 

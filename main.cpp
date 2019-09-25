@@ -44,23 +44,23 @@ int main(int argc, char ** argv)
 
 
     // Read whole input file instead of separate lines
-
-    //std::stringstream buffer;
-    //buffer << fin.rdbuf();
-
-    // alternative method:
     fin.seekg(0, ios::end);
     size_t size = fin.tellg();
     string buffer(size, ' ');
     fin.seekg(0);
     fin.read(&buffer[0], size);
     fin.close();
+
+    // Alternative method:
+    //std::stringstream buffer;
+    //buffer << fin.rdbuf();
+
     cout << "Reading file done.\n" << endl;
 
     LinearProgram lp;
-        
-    // string line;
     
+    // Code used to feed old hand-written parsers (non-Spirit)
+    // string line;
     // while (fin) {        
     //     getline(fin, line);
     //     line += "\n";
@@ -81,9 +81,14 @@ int main(int argc, char ** argv)
     //     }
     // }
 
-    if (run_parser_lp(buffer, lp)) {
-        lp.solve();
-        lp.write("sol_test.xml");
+    try {
+        if (run_parser_lp(buffer, lp)) {
+            lp.solve();
+            lp.write("sol_test.xml");
+        }
+    }
+    catch (char const * msg) {
+        cout << "Exception: " << msg << endl;
     }
     
     cout << "Exiting program." << endl;

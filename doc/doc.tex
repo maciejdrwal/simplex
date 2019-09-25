@@ -53,7 +53,7 @@
 
 \maketitle
 
-\section{Outline of the (Revised) Simplex Algorithm.}
+\section*{Outline of the (Revised) Simplex Algorithm.}
 
 A standard form LP is:
 
@@ -129,5 +129,21 @@ In this phase we solve the original LP \eqref{lp:obj}--\eqref{lp:nonneg}, given 
 \end{enumerate}
 
 The rules for selecting entering and leaving indices are called {\em Bland's rules}.
+
+\section*{Simplex method for problems with bounded variables}
+
+Let us assume that variables in the problem are bounded, i.e.,
+$$
+    \forall_{j=1,\ldots,n} \;\; L_j \leq x_j \leq U_j.
+$$
+
+By substituting $x_j' = x_j - L_j$ we can, without the loss of generality, consider the following formulation:
+
+\begin{align}
+    \textrm{min } & {\bf c}^T {\bf x} \label{lp:obj_sub} \\
+    \textrm{st. } & {\bf A} {\bf x} = {\bf b}, \label{lp:Axeqb_sub} \\
+                  & 0 \leq {\bf x} \leq {\bf u}. \label{lp:bounds}
+\end{align}
+where ${\bf u} = [U_1 - L_1, U_2 - L_2, \ldots, U_n - L_n]^T$, and we use ${\bf x}$ instead of ${\bf x}'$ for brevity (note that we omit the constant term from the objective function, as the optimal solution remains the same).
 
 \end{document} 

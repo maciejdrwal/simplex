@@ -5,30 +5,28 @@
 // notice are preserved on all copies and modified versions of this file.
 // 
 
-#include "parser.h"
-#include "utils.h"
+#include <iostream>
 
 #include <boost/spirit/home/x3.hpp>
 
-#include <iostream>
+#include "parser.h"
+#include "utils.h"
 
 namespace x3 = boost::spirit::x3;
 namespace ascii = boost::spirit::x3::ascii;
 
 namespace parser 
 {
-    using x3::eps;
-    using x3::lit;
-    using x3::lexeme;
     using x3::double_;
-    using x3::eol;
     using x3::eoi;
-    using x3::skip;
+    using x3::lexeme;
+    using x3::lit;
     using x3::no_case;
+    using x3::skip;
 
-    using ascii::char_;
-    using ascii::alpha;
     using ascii::alnum;
+    using ascii::alpha;
+    using ascii::char_;
     using ascii::space;
 
     // Semantic actions definitions
@@ -37,17 +35,20 @@ namespace parser
     auto set_obj_label      = [](auto & ctx) { _val(ctx).set_objective_label(_attr(ctx)); };
     auto add_obj_fun_coeff  = [](auto & ctx) { _val(ctx).set_var_coeff_cache(_attr(ctx)); };
     auto add_obj_fun_var    = [](auto & ctx) 
-    { 
-       _val(ctx).add_variable(_attr(ctx)); 
-       _val(ctx).objective_name_coeff[_attr(ctx)] = 
-            _val(ctx).get_sign_cache() 
-            ? -_val(ctx).get_var_coeff_cache()
-            :  _val(ctx).get_var_coeff_cache();  
-     };
-    auto neg_var_coeff      = [](auto & ctx) { _val(ctx).set_sign_cache(true); };
+    {
+        // create new variable and store associated obj.fun. coefficient
+        auto var_name = _attr(ctx);
+        if (_val(ctx).has_variable(var_name)) {
+            throw "Parser: variable already defined in objective function.";
+        }
+        _val(ctx).add_variable(var_name); 
+        _val(ctx).objective_name_coeff[var_name] = 
+            _val(ctx).get_sign_cache() * _val(ctx).get_var_coeff_cache();
+    };
+    auto neg_var_coeff      = [](auto & ctx) { _val(ctx).set_sign_cache(-1); };
     auto term_parsed        = [](auto & ctx) 
     { 
-        _val(ctx).set_sign_cache(false);
+        _val(ctx).set_sign_cache(1);
         _val(ctx).set_var_coeff_cache(1); 
     };
     auto add_obj_fun_const  = [](auto & ctx) { _val(ctx).set_obj_value_shift(_attr(ctx)); };
@@ -71,23 +72,34 @@ namespace parser
             _val(ctx).constraints[constr_label] = constr_ptr;
         }
 
-        if (!_val(ctx).has_variable(_attr(ctx))) {
+        auto var_name = _attr(ctx);
+
+        if (_val(ctx).constraints[constr_label]->name_coeff.count(var_name) != 0) {
+            throw (string("Parser: variable already defined in constraint") + constr_label).c_str();
+        }
+
+        if (!_val(ctx).has_variable(var_name)) {
             // adding new variable via constraint
-            _val(ctx).add_variable(_attr(ctx));
+            _val(ctx).add_variable(var_name);
         }
 
         auto coeff = _val(ctx).get_var_coeff_cache();
-        auto sign  = _val(ctx).get_sign_cache() ? -1 : 1;
-        _val(ctx).constraints[constr_label]->name_coeff[_attr(ctx)] = sign * coeff;
+        auto sign  = _val(ctx).get_sign_cache();
+        _val(ctx).constraints[constr_label]->name_coeff[var_name] = sign * coeff;
     };
 
     auto add_constr_type = [](auto & ctx) 
     { 
-        _val(ctx).constraints[_val(ctx).get_label_cache()]->type = _attr(ctx); 
+        _val(ctx).constraints[_val(ctx).get_label_cache()]->type = _attr(ctx);
     };
     auto add_constr_rhs  = [](auto & ctx) 
-    { 
-        _val(ctx).constraints[_val(ctx).get_label_cache()]->rhs = _attr(ctx);
+    {
+        double _rhs = _attr(ctx);
+        _val(ctx).constraints[_val(ctx).get_label_cache()]->rhs = _rhs;
+        auto op = _val(ctx).constraints[_val(ctx).get_label_cache()]->type;
+        if ((op == '<' && _rhs < 0.0) ||
+            (op == '>' && _rhs > 0.0) ||
+            (op == '=')) _val(ctx).set_all_inequalities(false);
         _val(ctx).set_label_cache("");
     };
 
@@ -97,35 +109,50 @@ namespace parser
         auto var_name = _attr(ctx);
         _val(ctx).set_label_cache(var_name);  // store var_name, in case we need to add UB
         if (_isfloatzero(lb)) return;
-        if (lb < 0.0) {
-            // negative lower bound: substitute z = x + lb, z >= 0
-            _val(ctx).add_shift(var_name, lb);
-        }
-        else {
-            // add ordinary constraint x >= lb
-            auto constr_label = string("LBND") + tostr<size_t>(_val(ctx).constraints.size());
-            auto constr_ptr = make_shared<Constraint>('>', lb);
-            _val(ctx).constraints[constr_label] = constr_ptr;
-            _val(ctx).constraints[constr_label]->name_coeff[var_name] = 1.0;
-        }
+        _val(ctx).var_lbnd[var_name] = lb;
+
+        // if (lb < 0.0) {
+        //     // negative lower bound: substitute z = x + lb, z >= 0
+        //     _val(ctx).add_shift(var_name, lb);
+        // }
+        // else {
+        //     // add ordinary constraint x >= lb
+        //     auto constr_label = string("LBND") + tostr<size_t>(_val(ctx).constraints.size());
+        //     auto constr_ptr = make_shared<Constraint>('>', lb);
+        //     _val(ctx).constraints[constr_label] = constr_ptr;
+        //     _val(ctx).constraints[constr_label]->name_coeff[var_name] = 1.0;
+        // }
     };
-    auto store_ub_var_name = [](auto & ctx) { _val(ctx).set_label_cache(_attr(ctx)); };
     auto add_ub_constr     = [](auto & ctx)
     {
         auto var_name = _val(ctx).get_label_cache();    // now it contains var_name
         auto ub = _attr(ctx);
-        char _type = '<';
-        if (ub < 0.0) {
-            // negative upper bound: substitute z = -x
-            _val(ctx).add_shift(var_name, 0.0);
-            ub = -ub;
-            _type = '>';
-        }
-        // add ordinary constraint x <= ub (or -x >= -ub)
-        auto constr_ptr = make_shared<Constraint>(_type, ub);
-        auto constr_label = string("UBND") + tostr<size_t>(_val(ctx).constraints.size());
-        _val(ctx).constraints[constr_label] = constr_ptr;
-        _val(ctx).constraints[constr_label]->name_coeff[var_name] = 1.0;
+        _val(ctx).var_ubnd[var_name] = ub;
+        
+        // char _type = '<';
+        // if (ub < 0.0) {
+        //     // negative upper bound: substitute z = -x
+        //     _val(ctx).add_shift(var_name, 0.0);
+        //     ub = -ub;
+        //     _type = '>';
+        // }
+        // // add ordinary constraint x <= ub (or -x >= -ub)
+        // auto constr_ptr = make_shared<Constraint>(_type, ub);
+        // auto constr_label = string("UBND") + tostr<size_t>(_val(ctx).constraints.size());
+        // _val(ctx).constraints[constr_label] = constr_ptr;
+        // _val(ctx).constraints[constr_label]->name_coeff[var_name] = 1.0;
+    };
+    auto store_ub_var_name = [](auto & ctx) { _val(ctx).set_label_cache(_attr(ctx)); };
+    auto add_inf_lb        = [](auto & ctx) 
+    {
+        auto lb = std::numeric_limits<double>::min();
+        _val(ctx).set_var_coeff_cache(lb); 
+    };
+    auto add_inf_ub        = [](auto & ctx)
+    {
+        auto var_name = _val(ctx).get_label_cache();    // now it contains var_name
+        auto ub = std::numeric_limits<double>::max();
+        _val(ctx).var_ubnd[var_name] = ub;
     };
 
     auto print_attr = [](auto & ctx) { std::cout << _attr(ctx) << std::endl; };
@@ -137,7 +164,9 @@ namespace parser
         keywords_t() {
             add("Subject")
                ("Bounds")
-               ("End");
+               ("End")
+               ("Inf")
+               ("Infinity");
         }
     } const keywords;
 
@@ -154,7 +183,7 @@ namespace parser
     ;
 
     auto const obj_fun_expr =
-           -(identifier [set_obj_label] >> ':') 
+           -(identifier >> ':') [set_obj_label]
         >> -(char_('+') | char_('-')[neg_var_coeff]) >> obj_fun_term [term_parsed]
         >> *((char_('+') | char_('-')[neg_var_coeff]) > obj_fun_term [term_parsed])
     ;
@@ -176,12 +205,13 @@ namespace parser
     ;
 
     auto const bound_expr =
-        (double_[add_constr_coeff] 
+        ((double_ [add_constr_coeff] | ('-' >> (no_case["Inf"] | no_case["Infinity"]) [add_inf_lb]))
             >> lit("<=") >> identifier [add_lb_constr] 
-            >> -(lit("<=") >> double_[add_ub_constr]))
+            >> -(lit("<=") >> double_ [add_ub_constr]))
         |
         (identifier [store_ub_var_name] 
-            >> lit("<=") >> double_[add_ub_constr])
+            >> lit("<=") 
+            >> (double_[add_ub_constr] | (-char_('+') >> (no_case["Inf"] | no_case["Infinity"]) [add_inf_ub])))
     ;
 
     x3::rule<class lp_rules, LinearProgram> const lp_rules ("lp_rules");

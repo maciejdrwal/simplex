@@ -233,7 +233,7 @@ int parse_input_line_lp(const char * buffer, LinearProgram * lp)
                 double lbf = atof(lb), ubf = atof(ub);
                 if (lbf < 0.0) {
                     // negative lower bound: substitute z = x + lbf, z >= 0
-                    lp->add_shift(var_name, lbf);
+                    lp->set_shift(var_name, lbf);
                 }
                 else if (lbf > 0.0) {
                     // add ordinary constraint
@@ -249,7 +249,7 @@ int parse_input_line_lp(const char * buffer, LinearProgram * lp)
                 char _type = '<';
                 if (ubf < 0.0) {
                     // negative upper bound: substitute z = -x
-                    lp->add_shift(var_name, 0.0);
+                    lp->set_shift(var_name, 0.0);
                     ubf = -ubf;
                     _type = '>';
                 }
@@ -424,7 +424,7 @@ int parse_input_line_mps(const char *buffer, LinearProgram *lp)
             case 'U':
             if (f1 < 0.0) {
                 // negative upper bound: we substitute z = -x, and add regular constraint z >= f1
-                lp->add_shift(col_name, 0.0);
+                lp->set_shift(col_name, 0.0);
                 _type = '>';
                 f1 = -f1;
             }
@@ -433,7 +433,7 @@ int parse_input_line_mps(const char *buffer, LinearProgram *lp)
             _type = '>';
             if (f1 < 0.0) {
                 // negative lower bound: we substitute variable x adding shift: z = x + f1
-                lp->add_shift(col_name, f1);
+                lp->set_shift(col_name, f1);
                 f1 = 0.0;
             }
             break;

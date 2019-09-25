@@ -10,6 +10,6 @@
 
 #include "simplex.h"
 
-void apply_shifts(LinearProgram * lp);
+void presolve(LinearProgram * lp);
 
 #endif

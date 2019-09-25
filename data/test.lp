@@ -9,4 +9,10 @@ Subject To
  C1: x1                + x5           = 2
  C2:           x3           + x6      = 3
  C3:    3 x2 + x3                + x7 = 6
+Bounds
+ 1 <= x2 <= 10
+ 0 <= x1
+ 2 <= x5
+ 2.5 <= x3 <= 4
+ x4 <= 0.5
 End

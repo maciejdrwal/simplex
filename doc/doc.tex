@@ -144,6 +144,49 @@ By substituting $x_j' = x_j - L_j$ we can, without the loss of generality, consi
     \textrm{st. } & {\bf A} {\bf x} = {\bf b}, \label{lp:Axeqb_sub} \\
                   & 0 \leq {\bf x} \leq {\bf u}. \label{lp:bounds}
 \end{align}
-where ${\bf u} = [U_1 - L_1, U_2 - L_2, \ldots, U_n - L_n]^T$, and we use ${\bf x}$ instead of ${\bf x}'$ for brevity (note that we omit the constant term from the objective function, as the optimal solution remains the same).
+where ${\bf u} = [U_1 - L_1, U_2 - L_2, \ldots, U_n - L_n]^T$, and we use ${\bf x}$ instead of ${\bf x}'$ for brevity (note that we also omit the constant term from the objective function, as the optimal solution remains the same).
+
+Instead of adding slack variables to singleton upper-bound constraints and appending them to the matrix ${\bf A}$, we consider this special type of constraints separately. We use the notion of {\it extended basic feasible solution}. In such a solution, all basic variables assume values 
+$$0 < x_j < U_j,$$ 
+while all nonbasic variables assume
+$$ x_j = 0 \;\; \textrm{ or } \;\; x_j = U_j.$$
+
+\medskip
+
+{\bf Theorem.} If every nonbasic variable at its lower bound has a nonnegative objective coefficient, and every nonbasic variable at its upper bound has a nonpositive objective coefficient, then the extended basic feasible solution minimizes the objective function over the feasible region. \qed
+
+\medskip
+
+If the objective coefficient $\hat{c}_j$ of nonbasic variable $x_j = 0$ is negative, we may increase $x_j$. If the objective coefficient $\hat{c}_j$ of nonbasic variable $x_j = U_j$ is positive, we may decrease $x_j$. In either case, the value of solution is improving.
+
+To simplify the computations, whenever a nonbasic variable assumes $x_j=U_j$, we apply the {\it upper-bound substitution}:
+$$
+    x_j = U_j - x_j'.
+$$
+This substitution affects the objective function coefficient $c_j$ and $a_{ij}$ and $b_i$ of each constraint that involves $x_j$. After applying it, all nonbasic variables have $x_j = 0$ or $x_j' = 0$. Thus we may use the same condition for selecting entering variable $x_s$ as in the original simplex method:
+
+\begin{quote}
+Select entering index $j$, such that ${\bf s}_j < 0$ and $j$ is the smallest.
+\end{quote}
+
+To determine the leaving variable we need to take 3 cases into consideration: when increasing entering variable $x_s$ from 0 either $x_s$ reaches its upper bound $U_s$, some basic variable $x_k$ decreases to 0, or some basic variable $x_k$ increases to its upper bound $U_k$. Thus we compute the following:
+$$
+    t_1 = \min_i \{ \frac{x_i}{d_i} : \; d_i > 0 \},
+$$
+$$
+    t_2 = \min \{ \frac{U_k - x_i}{-d_i} : \; d_i < 0 \},
+$$
+$$
+    \theta = \min \left\{ U_s, \; t_1, \; t_2 \right\}.
+$$
+
+\begin{enumerate}[i)]
+    \item If $\theta = \infty$ then problem is unbounded.
+    \item If $\theta = U_s$ then we apply the upper-bounding substitution to entering variable $x_s$ (basis remains unchanged).
+    \item If $\theta = t_1$ then we perform usual simplex pivot to introduce $x_s$ into basis.
+    \item If $\theta = t_2$ then we first apply the upper-bounding substitution to basic variable $x_k$ (corresponding to the minimum in $t_2$), and then perform simplex pivot to introduce $x_s$ into basis.
+\end{enumerate}
+
+When optimal solution is found (no increase in variable can lead to improvement of objective function) we must reverse all upper-bounding substitutions to retrieve the actual solution.
 
 \end{document} 

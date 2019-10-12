@@ -8,10 +8,11 @@
 #ifndef _PARSER_H_
 #define _PARSER_H_
 
-#include "simplex.h"
+class LinearProgram;
 
 enum { LP_FILE, MPS_FILE } file_format;
 
+// Old hand-written state machine parsers.
 int parse_input_line_lp(const char * buffer, LinearProgram * lp);
 int parse_input_line_mps(const char * buffer, LinearProgram * lp);
 

@@ -163,13 +163,13 @@ To simplify the computations, whenever a nonbasic variable assumes $x_j=U_j$, we
 $$
     x_j = U_j - x_j'.
 $$
-This substitution affects the objective function coefficient $c_j$ and $a_{ij}$ and $b_i$ of each constraint that involves $x_j$. After applying it, all nonbasic variables have $x_j = 0$ or $x_j' = 0$. Thus we may use the same condition for selecting entering variable $x_s$ as in the original simplex method:
+This substitution affects the objective function coefficient $c_j$, as well as $a_{ij}$ and $b_i$ of each constraint that involves $x_j$. After applying it, all nonbasic variables have $x_j = 0$ or $x_j' = 0$. Thus we may use the same condition for selecting entering variable $x_s$ as in the original simplex method:
 
 \begin{quote}
 Select entering index $j$, such that ${\bf s}_j < 0$ and $j$ is the smallest.
 \end{quote}
 
-To determine the leaving variable we need to take 3 cases into consideration: when increasing entering variable $x_s$ from 0 either $x_s$ reaches its upper bound $U_s$, some basic variable $x_k$ decreases to 0, or some basic variable $x_k$ increases to its upper bound $U_k$. Thus we compute the following:
+To determine the leaving variable we need to take 3 cases into consideration that may happend when the entering variable $x_s$ is increased from 0. Either $x_s$ reaches its upper bound $U_s$, some basic variable $x_k$ decreases to 0, or some basic variable $x_k$ increases to its upper bound $U_k$. Thus we compute the following:
 $$
     t_1 = \min_i \{ \frac{x_i}{d_i} : \; d_i > 0 \},
 $$
@@ -187,6 +187,6 @@ $$
     \item If $\theta = t_2$ then we first apply the upper-bounding substitution to basic variable $x_k$ (corresponding to the minimum in $t_2$), and then perform simplex pivot to introduce $x_s$ into basis.
 \end{enumerate}
 
-When optimal solution is found (no increase in variable can lead to improvement of objective function) we must reverse all upper-bounding substitutions to retrieve the actual solution.
+When optimal solution is found (no increase in any variable can lead to improvement of the objective function) we must reverse all upper-bounding substitutions to retrieve the actual solution.
 
 \end{document} 

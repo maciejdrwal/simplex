@@ -9,17 +9,34 @@
 #include <map>
 
 #include "presolve.h"
+#include "simplex.h"
 #include "utils.h"
 
-void fix_variable(const string & var_name, double values) {
+using std::string;
+using std::map;
+using std::shared_ptr;
+using std::cout;
+using std::endl;
+
+void Presolve::fix_variable(const string & var_name, double values) {
     throw "Presolve: not implemented.";
 }
 
-void eliminate_lbs(LinearProgram * lp)
+double Presolve::get_shift(const string & var_name) const
+{ 
+    return lp->var_shifts[var_name]; 
+}
+
+void Presolve::set_shift(const string & var_name, double value)
+{ 
+    lp->var_shifts[var_name] = value; 
+}
+
+// Eliminate all LBs by substituting:
+// x' = x - LB
+// x' >= 0
+void Presolve::eliminate_lbs()
 {
-    // Eliminate LBs by substituting:
-    // z = x - LB
-    // z >= 0
     for (map<string, double>::iterator it = lp->var_lbnd.begin(); it != lp->var_lbnd.end(); ++it) 
     {
         string var_name = it->first;
@@ -45,7 +62,7 @@ void eliminate_lbs(LinearProgram * lp)
 
         if (_isfloatzero(lb)) continue;
 
-        lp->set_shift(var_name, lb);
+        lp->var_shifts[var_name] = lb;
         it->second = 0.0;
 
         // Update objective function
@@ -59,7 +76,6 @@ void eliminate_lbs(LinearProgram * lp)
         for (map<string, shared_ptr<Constraint> >::iterator kt = lp->constraints.begin(); kt != lp->constraints.end(); ++kt) {
             char _type = kt->second->type;
             double _rhs = kt->second->rhs;
-
             auto term_it = kt->second->name_coeff.find(var_name);
             if (term_it != kt->second->name_coeff.end()) {
                 std::cout << "Presolve: applying shift " << lb << " to constraint " << kt->first 
@@ -70,54 +86,31 @@ void eliminate_lbs(LinearProgram * lp)
     }
 }
 
-void presolve(LinearProgram * lp) 
+void Presolve::apply_reductions()
 {
-    eliminate_lbs(lp);
+    for (auto it = lp->constraints.begin(); it != lp->constraints.end(); ++it) {
+        double U = 0.0;
+        double L = 0.0;
+        for (auto nc_it = it->second->name_coeff.begin(); nc_it != it->second->name_coeff.end(); ++nc_it) {
+            double a = nc_it->second;
+            double ub = lp->var_ubnd[nc_it->first];
+            double lb = lp->var_lbnd[nc_it->first];
+            if (nc_it->second > 0.0) {
+                U += a * ub;
+                L += a * lb;
+            }
+            else if (nc_it->second < 0.0) {
+                U += a * lb;
+                L += a * ub;
+            }
+        }
+        cout << "apply_red: constr:" << it->first << " L= " << L << " U=" << U << endl;
+    }
 }
 
-// void apply_shifts(LinearProgram * lp) {
-//     // printf("presolve: variables -> indices:\n");
-//     // for (map<string, int>::iterator it = lp->variable_names.begin(); it != lp->variable_names.end(); ++it) {
-//     //     printf("%s -> %i\n", it->first.c_str(), it->second);
-//     // }
-    
-//     for (map<string, double>::iterator it = lp->objective_name_coeff.begin(); it != lp->objective_name_coeff.end(); ++it) {
-//         // Applying shifts.
-//         for (map<string, double>::iterator kt = lp->get_var_shifts().begin(); kt != lp->get_var_shifts().end(); ++kt) {
-//             if ((kt->first == it->first) && (_isfloatzero(kt->second))) {
-//                 printf("APPLYING ZERO SHIFT: %s\n", it->first.c_str());
-//                 it->second = -it->second;
-//             }
-//         }
-        
-//         printf("%f * %s + ", it->second, it->first.c_str());
-//     }
-//     printf("\n\nConstraints:\n");
-//     for (map<string, shared_ptr<Constraint> >::iterator it = lp->constraints.begin(); it != lp->constraints.end(); ++it) {
-//         char _type = it->second->type;
-//         double _rhs = it->second->rhs;
-//         if ((_type == '<' && _rhs < 0.0) ||
-//             (_type == '>' && _rhs > 0.0) ||
-//             (_type == '=')) lp->set_all_inequalities(false);
+void Presolve::run() 
+{
+    if (reductions_enabled) apply_reductions();
+    eliminate_lbs();
+}
 
-//         printf("%s : ", it->first.c_str());
-//         for (map<string, double>::iterator jt = it->second->name_coeff.begin(); jt != it->second->name_coeff.end(); ++jt) {
-//             printf("%f %s + ", jt->second, jt->first.c_str());
-            
-//             // Applying shifts.     
-//             for (map<string, double>::iterator kt = lp->get_var_shifts().begin(); kt != lp->get_var_shifts().end(); ++kt) {
-//                 if (kt->first == jt->first) {
-//                     if (_isfloatzero(kt->second)) {
-//                         printf("APPLYING ZERO SHIFT: %s -> %f\n", kt->first.c_str(), kt->second);
-//                         jt->second = -jt->second;
-//                     }
-//                     else {
-//                         printf("APPLYING POS. SHIFT: %s -> %f\n", kt->first.c_str(), kt->second);
-//                         it->second->rhs -= kt->second * jt->second;
-//                     }
-//                 }       
-//             }
-//         }
-//         printf("%c %f\n", it->second->type, it->second->rhs);
-//     }
-// }

@@ -6,9 +6,9 @@
 #define _abs(x) ((x) < 0.0 ? -(x) : (x))
 #define _isfloatzero(x) (_abs(x) < 1e-9 ? true : false)
 
-template<typename T> string tostr(T i)
+template<typename T> std::string tostr(T i)
 {
-    stringstream ss;
+    std::stringstream ss;
     ss << i;
     return ss.str();
 }

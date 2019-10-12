@@ -1,454 +1,261 @@
-// Copyright (C) 2017-2019 Maciej Drwal
+// Copyright (C) 2019 Maciej Drwal
 // 
 // Permission is granted to copy and distribute verbatim copies and modified
 // versions of this file, provided that the copyright notice and this permission
 // notice are preserved on all copies and modified versions of this file.
 // 
 
-#include <stdio.h>
-#include <stdlib.h>
-#include <string.h>
-#include <ctype.h>
-#include <memory>
+#include <iostream>
+
+#include <boost/spirit/home/x3.hpp>
 
 #include "parser.h"
+#include "simplex.h"
 #include "utils.h"
 
-#define DEBUG_MODE 1
-#define debug_printf(fmt, ...) do { if (DEBUG_MODE) printf(fmt, ##__VA_ARGS__); } while (0)
-#define strncpy0(src, dst, num) { strncpy(src, dst, num); src[num] = '\0'; }
+using std::string;
 
-int parser_state = 0;
-int bounds_count = 0;
-string constr_name;
-map<string, double> constr_name_coeff;
-    
-// note: this function removes endline character at the end
-char * trimwhitespace(char *str) 
+struct ParserState {
+    LinearProgram & lp;
+    double _var_coeff_cache;
+    double _sign_cache;
+    string _label_cache;
+    ParserState(LinearProgram & _lp) : lp(_lp), _var_coeff_cache(0.0), _sign_cache(1.0), _label_cache("") {}
+};
+
+namespace x3 = boost::spirit::x3;
+namespace ascii = boost::spirit::x3::ascii;
+
+namespace parser 
 {
-    char *end;
-    while(isspace(*str)) str++;   // trim leading space
-    if (*str == 0) { return str; }    // all spaces?
-    end = str + strlen(str) - 1;    // trim trailing space
-    while(end > str && isspace(*end)) { end--; }
-    *(end + 1) = 0;     // write new null terminator
-    return str;
+    using x3::double_;
+    using x3::eoi;
+    using x3::lexeme;
+    using x3::lit;
+    using x3::no_case;
+    using x3::skip;
+
+    using ascii::alnum;
+    using ascii::alpha;
+    using ascii::char_;
+    using ascii::space;
+
+    // Semantic actions definitions
+    auto set_minimize       = [](auto & ctx) { _val(ctx).lp.set_sense('m'); };
+    auto set_maximize       = [](auto & ctx) { _val(ctx).lp.set_sense('M'); };
+    auto set_obj_label      = [](auto & ctx) { _val(ctx).lp.set_objective_label(_attr(ctx)); };
+    auto add_obj_fun_coeff  = [](auto & ctx) { _val(ctx)._var_coeff_cache = _attr(ctx); };
+    auto add_obj_fun_var    = [](auto & ctx) 
+    {
+        // create new variable and store associated obj.fun. coefficient
+        auto var_name = _attr(ctx);
+        if (_val(ctx).lp.has_variable(var_name)) {
+            throw "Parser: variable already defined in objective function.";
+        }
+        _val(ctx).lp.add_variable(var_name); 
+        _val(ctx).lp.objective_name_coeff[var_name] = 
+            _val(ctx)._sign_cache * _val(ctx)._var_coeff_cache;
+    };
+    auto neg_var_coeff      = [](auto & ctx) { _val(ctx)._sign_cache = -1; };
+    auto term_parsed        = [](auto & ctx) 
+    { 
+        _val(ctx)._sign_cache = 1;
+        _val(ctx)._var_coeff_cache = 1; 
+    };
+    auto add_obj_fun_const  = [](auto & ctx) { _val(ctx).lp.set_obj_value_shift(_attr(ctx)); };
+
+    auto set_constr_label   = [](auto & ctx) 
+    {
+        // create labeled constraint
+        auto constr_ptr = std::make_shared<Constraint>();
+        _val(ctx)._label_cache = _attr(ctx); 
+        _val(ctx).lp.constraints[_attr(ctx)] = constr_ptr;
+    };
+    auto add_constr_coeff   = [](auto & ctx) { _val(ctx)._var_coeff_cache = _attr(ctx); };
+    auto add_constr_var     = [](auto & ctx) 
+    {
+        auto constr_label = _val(ctx)._label_cache;
+        if (constr_label == "") {
+            // no label was defined by user; create new constraint with default label
+            auto constr_ptr = std::make_shared<Constraint>();
+            constr_label = string("CONSTR") + tostr<size_t>(_val(ctx).lp.constraints.size());
+            _val(ctx)._label_cache = constr_label;
+            _val(ctx).lp.constraints[constr_label] = constr_ptr;
+        }
+
+        auto var_name = _attr(ctx);
+
+        if (_val(ctx).lp.constraints[constr_label]->name_coeff.count(var_name) != 0) {
+            throw (string("Parser: variable already defined in constraint") + constr_label).c_str();
+        }
+
+        if (!_val(ctx).lp.has_variable(var_name)) {
+            // adding new variable via constraint
+            _val(ctx).lp.add_variable(var_name);
+        }
+
+        auto coeff = _val(ctx)._var_coeff_cache;
+        auto sign  = _val(ctx)._sign_cache;
+        _val(ctx).lp.constraints[constr_label]->name_coeff[var_name] = sign * coeff;
+    };
+
+    auto add_constr_type = [](auto & ctx) 
+    { 
+        _val(ctx).lp.constraints[_val(ctx)._label_cache]->type = _attr(ctx);
+    };
+    auto add_constr_rhs  = [](auto & ctx) 
+    {
+        double _rhs = _attr(ctx);
+        _val(ctx).lp.constraints[_val(ctx)._label_cache]->rhs = _rhs;
+        auto op = _val(ctx).lp.constraints[_val(ctx)._label_cache]->type;
+        if ((op == '<' && _rhs < 0.0) ||
+            (op == '>' && _rhs > 0.0) ||
+            (op == '=')) _val(ctx).lp.set_all_inequalities(false);
+        _val(ctx)._label_cache = "";
+    };
+
+    auto add_lb_constr   = [](auto & ctx) 
+    { 
+        auto lb = _val(ctx)._var_coeff_cache;  // now it contains LB
+        auto var_name = _attr(ctx);
+        _val(ctx)._label_cache = var_name;  // store var_name, in case we need to add UB
+        if (_isfloatzero(lb)) return;
+        _val(ctx).lp.var_lbnd[var_name] = lb;
+    };
+    auto add_ub_constr     = [](auto & ctx)
+    {
+        auto var_name = _val(ctx)._label_cache;    // now it contains var_name
+        auto ub = _attr(ctx);
+        _val(ctx).lp.var_ubnd[var_name] = ub;
+    };
+    auto store_ub_var_name = [](auto & ctx) { _val(ctx)._label_cache = _attr(ctx); };
+    auto add_inf_lb        = [](auto & ctx) 
+    {
+        auto lb = std::numeric_limits<double>::min();
+        _val(ctx)._var_coeff_cache = lb; 
+    };
+    auto add_inf_ub        = [](auto & ctx)
+    {
+        auto var_name = _val(ctx)._label_cache;    // now it contains var_name
+        auto ub = std::numeric_limits<double>::max();
+        _val(ctx).lp.var_ubnd[var_name] = ub;
+    };
+
+    auto print_attr = [](auto & ctx) { std::cout << _attr(ctx) << std::endl; };
+
+    // Grammar rules definitions
+    // TODO: handle properly the constant objective function, e.g., obj: 0
+
+    struct keywords_t : x3::symbols<x3::unused_type> {
+        keywords_t() {
+            add("Subject")
+               ("Bounds")
+               ("End")
+               ("Inf")
+               ("Infinity");
+        }
+    } const keywords;
+
+    auto const distinct_keywords = lexeme[no_case[keywords] >> !(alnum | '_')];
+
+    x3::rule<struct identifier_tag, std::string> const identifier ("identifier");
+    auto const identifier_def = lexeme[+(alpha | '_') >> *(alnum | '_')] - distinct_keywords;
+
+    BOOST_SPIRIT_DEFINE(identifier);
+
+    auto const obj_fun_term =
+           -(double_ [add_obj_fun_coeff])
+        >> identifier [add_obj_fun_var]
+    ;
+
+    auto const obj_fun_expr =
+           -(identifier >> ':') [set_obj_label]
+        >> -(char_('+') | char_('-')[neg_var_coeff]) >> obj_fun_term [term_parsed]
+        >> *((char_('+') | char_('-')[neg_var_coeff]) > obj_fun_term [term_parsed])
+    ;
+
+    auto const constr_term =
+           -(double_ [add_constr_coeff])
+        >> identifier [add_constr_var]
+    ;
+
+    auto const constraint_expr = 
+        -(identifier >> ':') [set_constr_label]
+        >> 
+        (
+               -(char_('+') | char_('-')[neg_var_coeff]) >> constr_term [term_parsed]
+            >> *((char_('+') | char_('-')[neg_var_coeff]) > constr_term [term_parsed])
+            >> (char_("<>=")) [add_constr_type] >> -char_('=')
+            >> double_ [add_constr_rhs]
+        )
+    ;
+
+    auto const bound_expr =
+        ((double_ [add_constr_coeff] | ('-' >> (no_case["Inf"] | no_case["Infinity"]) [add_inf_lb]))
+            >> lit("<=") >> identifier [add_lb_constr] 
+            >> -(lit("<=") >> double_ [add_ub_constr]))
+        |
+        (identifier [store_ub_var_name] 
+            >> lit("<=") 
+            >> (double_[add_ub_constr] | (-char_('+') >> (no_case["Inf"] | no_case["Infinity"]) [add_inf_ub])))
+    ;
+
+    x3::rule<class lp_rules, ParserState> const lp_rules ("lp_rules");
+    auto const lp_rules_def =
+        skip(space)[
+               (no_case["Minimize"] [set_minimize] | no_case["Maximize"] [set_maximize])
+            >> -char_(':')
+            >> obj_fun_expr
+            >> no_case["Subject To"] >> -char_(':')
+            >> +constraint_expr
+            >> -(no_case["Bounds"] >> -char_(':') >> +bound_expr)
+            >> no_case["End"] >> -char_('.')
+            >> eoi
+        ]
+    ;
+
+    BOOST_SPIRIT_DEFINE(lp_rules);
 }
 
-// This function implements the parser of .lp files.
-// The format for storing LP/ILP is used by CPLEX solver.
-// TODO: handle syntax errors, etc.
-int parse_input_line_lp(const char * buffer, LinearProgram * lp) 
+std::string remove_comments(const std::string & input)
 {
-    char _buf[1024], *line_buf;
-    line_buf = _buf;
-    
-    debug_printf("parser buffer: %s", buffer);
-    
-    // copy the line data to internal buffer
-    strcpy(line_buf, buffer);
-    line_buf = trimwhitespace(line_buf);
-    if (strcmp(buffer, "\n") == 0 || strlen(line_buf) == 0) {
-        debug_printf("parser: empty line\n");
-        return 0;
-    }
-    
-    if (line_buf[0] == '\\' || line_buf[0] == '#' || line_buf[0] == '/') {
-        debug_printf("parser: comment line\n");
-        return 0;
-    }
-    
-    if (strncmp(line_buf, "Maximize", 8) == 0) {
-        lp->set_sense('M');
-        parser_state = 1;
-        return 0;
-    }
-    else if (strncmp(line_buf, "Minimize", 8) == 0) {
-        lp->set_sense('m');
-        parser_state = 1;
-        return 0;
-    }
-    else if (strncmp(line_buf, "Subject To", 10) == 0) {
-        parser_state = 2;
-        return 0;
-    }
-    else if (strncmp(line_buf, "Bounds", 6) == 0) {
-        parser_state = 3;
-        return 0;
-    }
-    else if (strncmp(line_buf, "End", 3) == 0) {
-        
-        debug_printf("Objective label: %s\n", lp->get_objective_label().c_str());
-        //debug_printf("Number of variables: %d\n", lp->variable_names_to_ids.size());
-        
-        // Reset the internal parser state, to make it ready to be used on a different file.
-        parser_state = 0;
-        bounds_count = 0;
-        
-        return 0;
-    }
-    
-    char label[128], contents[1024], term[128], coeff[128], var_name[128], lb[128], ub[128];
-    const char *contents_ptr, *contents_next_ptr;
-    int span;
-    double sign = 1.0;
-    
-    switch (parser_state) {
-        case 1:
-        // handle the objective function
-        span = strcspn(line_buf, ":");
-        if (span == strlen(line_buf)) {
-            span = -1;
-        }
-        else {
-            strncpy0(label, line_buf, span);            
-            if (lp->get_objective_label().length() == 0) lp->set_objective_label(string(label));
-        }
-        strcpy(contents, trimwhitespace(line_buf + span + 1));
-                    
-        // tokenize the contents of the line, of the form: coeff1 var_name1 + coeff2 var_name2 + ...
-        contents_ptr = contents;
-        while (contents_ptr != NULL) {
-            sign = 1.0;
-            if (*contents_ptr == '-') { contents_ptr++; sign = -1.0; }
-            if (*contents_ptr == '+') contents_ptr++;
-            
-            contents_next_ptr = contents_ptr;
-            contents_ptr = strpbrk(contents_next_ptr, "+-");
-            if (contents_ptr == NULL) {
-                strcpy(term, contents_next_ptr);
-            }
-            else {
-                strncpy0(term, contents_next_ptr, contents_ptr - contents_next_ptr);
-            }
-            strcpy(term, trimwhitespace(term));
-            if (strchr(term, ' ') == NULL) {
-                strcpy(coeff, "1");
-                strcpy(var_name, term);
-            }
-            else {
-                strncpy0(coeff, term, strchr(term, ' ') - term);
-                strcpy(var_name, strchr(term, ' '));
-            }
-            strcpy(var_name, trimwhitespace(var_name));
-            
-            debug_printf("term: %s, coeff: %f, var_name: %s\n", term, sign * atof(coeff), var_name);
-            
-            lp->add_variable(var_name);
-            if (strlen(coeff) == 0) {
-                lp->objective_name_coeff[var_name] = sign;
-            }
-            else {
-                lp->objective_name_coeff[var_name] = sign * atof(coeff);
-            }
-        }       
-        return 0;
-        
-        case 2:
-        // handle a constraint
-        span = strcspn(line_buf, ":");
-        if (span == strlen(line_buf)) {
-            span = -1;
-        }
-        else {
-            strncpy0(label, line_buf, span);
-            if (constr_name.length() == 0) constr_name = string(label);
-        }
-                
-        strcpy(contents, trimwhitespace(line_buf + span + 1));
-        
-        // tokenize the contents of the line
-        contents_ptr = contents;
-        while (contents_ptr != NULL) {
-            sign = 1.0;
-            if (*contents_ptr == '-') { contents_ptr++; sign = -1.0; }
-            if (*contents_ptr == '+') contents_ptr++;
-            if (*contents_ptr == '=' || *contents_ptr == '<' || *contents_ptr == '>') {
-                // add new constraint information to the lp object
-                strcpy(term, contents_ptr + strspn(contents_ptr, "<>="));
-                
-                auto constr_ptr = make_shared<Constraint>(*contents_ptr, atof(term));
-                lp->constraints.emplace(constr_name, constr_ptr);
-                lp->constraints[constr_name]->name_coeff = constr_name_coeff;
-                
-                // update set of defined variables if necessary
-                for (map<string, double>::iterator it = constr_name_coeff.begin(); it != constr_name_coeff.end(); ++it) {
-                    if (!lp->has_variable(it->first)) {
-                        debug_printf("parser: adding new variable via constraint:%s\n", it->first.c_str());
-                        lp->add_variable(it->first);
-                    }
-                }
-                
-                if ((*contents_ptr == '<' && constr_ptr->rhs < 0.0) ||
-                    (*contents_ptr == '>' && constr_ptr->rhs > 0.0) ||
-                    (*contents_ptr == '=')) lp->set_all_inequalities(false);
-                
-                constr_name = string();
-                constr_name_coeff.clear();              
-                debug_printf("parser: new constraint added\n");
-                return 0;
-            }
-            
-            contents_next_ptr = contents_ptr;
-            contents_ptr = strpbrk(contents_next_ptr, "+-<>=");
-                                    
-            if (contents_ptr == NULL) {
-                strcpy(term, contents_next_ptr);
-            }
-            else {
-                strncpy0(term, contents_next_ptr, contents_ptr - contents_next_ptr);
-            }
-            strcpy(term, trimwhitespace(term)); 
-            
-            if (strchr(term, ' ') == NULL) {
-                strcpy(coeff, "1");
-                strcpy(var_name, term);
-            }
-            else {
-                strncpy0(coeff, term, strchr(term, ' ') - term);
-                strcpy(var_name, strchr(term, ' '));
-            }
-            strcpy(var_name, trimwhitespace(var_name));
-            
-            debug_printf("term: %s, coeff: %f, var_name: %s\n", term, sign * atof(coeff), var_name);
-            
-            constr_name_coeff[var_name] = sign * atof(coeff);
-        }
-        
-        return 0;
-        
-        case 3:
-        // handle bounds
-        contents_next_ptr = line_buf;
-        contents_ptr = strchr(contents_next_ptr, '<');
-        if (contents_ptr != NULL) {
-            strncpy0(lb, contents_next_ptr, contents_ptr - contents_next_ptr);
-            contents_next_ptr = contents_ptr + strspn(contents_ptr, "<= ");
-            contents_ptr = strchr(contents_next_ptr, '<');
-            if (contents_ptr != NULL) {
-                strncpy0(var_name, contents_next_ptr, contents_ptr - contents_next_ptr);
-                strcpy(var_name, trimwhitespace(var_name));
-                strcpy(ub, contents_ptr + strspn(contents_ptr, "<= "));
-                
-                double lbf = atof(lb), ubf = atof(ub);
-                if (lbf < 0.0) {
-                    // negative lower bound: substitute z = x + lbf, z >= 0
-                    lp->set_shift(var_name, lbf);
-                }
-                else if (lbf > 0.0) {
-                    // add ordinary constraint
-                    constr_name_coeff[var_name] = 1.0;                    
-                    auto constr_ptr = make_shared<Constraint>('>', lbf);
-                    constr_name = string("#LBOUND") + tostr<int>(bounds_count++);
-                    lp->constraints.emplace(constr_name, constr_ptr);
-                    lp->constraints[constr_name]->name_coeff = constr_name_coeff;
-                    
-                    constr_name_coeff.clear();
-                }
-                
-                char _type = '<';
-                if (ubf < 0.0) {
-                    // negative upper bound: substitute z = -x
-                    lp->set_shift(var_name, 0.0);
-                    ubf = -ubf;
-                    _type = '>';
-                }
-                //add ordinary constraint
-                constr_name_coeff[var_name] = 1.0;
-                auto constr_ptr = make_shared<Constraint>(_type, ubf);
-                constr_name = string("#UBOUND") + tostr<int>(bounds_count++);
-                lp->constraints.emplace(constr_name, constr_ptr);
-                lp->constraints[constr_name]->name_coeff = constr_name_coeff;
-                
-                constr_name_coeff.clear();
-            }
-        }
-        
-        debug_printf("lb: %s, var: %s, ub: %s\n", lb, var_name, ub);
-        
-        return 0;        
-    }
-    
-    return 0;
-}
+    std::string result("");
+    size_t pos_start = 0, pos_cur = 0;
 
-// This function implements the parser of .mps (Mathematical Programming System) files.
-// TODO: handle syntax errors, etc.
-int parse_input_line_mps(const char *buffer, LinearProgram *lp)
-{
-    char _buf[1024], *line_buf;
-    line_buf = _buf;
-
-    debug_printf("parser: buffer: %s", buffer);
-
-    // copy the line data to internal buffer
-    strcpy(line_buf, buffer);
-    line_buf = trimwhitespace(line_buf);
-    if (strcmp(buffer, "\n") == 0 || strlen(line_buf) == 0) {
-        debug_printf("parser: empty line\n");
-        return 0;
-    }
-
-    if (line_buf[0] == '*') {
-        debug_printf("parser: comment line\n");
-        return 0;
-    }
-
-    if (strncmp(line_buf, "ROWS", 4) == 0) {
-        if (parser_state != 1) { parser_state = 1; return 0; }
-    }
-    else if (strncmp(line_buf, "COLUMNS", 7) == 0) {
-        if (parser_state != 2) { parser_state = 2; return 0; }
-    }
-    else if (strncmp(line_buf, "RHS", 3) == 0) {
-        if (parser_state != 3) { parser_state = 3; return 0; }
-    }
-    else if (strncmp(line_buf, "BOUNDS", 6) == 0) {
-        if (parser_state != 4) { parser_state = 4; return 0; }
-    }
-    else if (strncmp(line_buf, "ENDATA", 6) == 0) {
-        
-        debug_printf("Objective label: %s\n", lp->get_objective_label().c_str());
-        //debug_printf("Number of variables: %d\n", lp->variable_names_to_ids.size());
-        
-        // Reset the internal parser state, to make it ready to be used on a different file.
-        parser_state = 0;
-        bounds_count = 0;
-        
-        return 0;
-    }
-
-    char rhs_name[16], col_name[16], row_name1[16], data1[16], row_name2[16], data2[16], row_type[16];
-    double f1, f2;
-    int cidx, ridx;
-    string cn, rn;
-
-    switch (parser_state) {
-        case 1:
-        sscanf(line_buf, "%16s %16s", &row_type, &row_name1);
-        if (row_type[0] == 'N') {
-            lp->set_objective_label(string(row_name1));
-        }
-        else {
-            char _type = row_type[0] == 'L' ? '<' : (row_type[0] == 'G' ? '>' : '=');
-            if (_type != '=') lp->set_all_inequalities(false);
-            auto constr_ptr = make_shared<Constraint>(_type, 0.0);
-            lp->constraints.emplace(row_name1, constr_ptr);
-            lp->constraints[row_name1]->name_coeff = constr_name_coeff;
-        }
-        return 0;
-
-        case 2:
-        row_name2[0] = '\0';
-        data2[0] = '0';
-        data2[1] = '\0';
-        sscanf(line_buf, "%16s %16s %16s %16s %16s", &col_name, &row_name1, &data1, &row_name2, &data2);
-        f1 = strtof(data1, NULL);
-        f2 = strtof(data2, NULL);
-
-        debug_printf("parser: column: %s %s %s %s %s\n", col_name, row_name1, data1, row_name2, data2);
-        
-        // If the variable name appears for the first time, then save its name.
-        if (!lp->has_variable(col_name)) {
-            lp->add_variable(col_name);
-        }
-        
-        // Handle row_name1 / f1.
-        // Check if the name refers to the objective function.
-        if (strcmp(lp->get_objective_label().c_str(), row_name1) == 0) {
-            lp->objective_name_coeff[col_name] = f1;
-        }
-        else {
-            // The name must correspond to a constraint.
-            auto constr_ptr = lp->constraints[row_name1];
-            if (constr_ptr != nullptr) {
-                constr_ptr->name_coeff[col_name] = f1;
-            }
-            else { printf("#1 NULL pointer!\n"); }
-        }
-
-        // Handle row_name2 / f2.
-        if (row_name2[0] == '\0') return 0;
-        
-        // Check if the name refers to the objective function.
-        if (strcmp(lp->get_objective_label().c_str(), row_name2) == 0) {
-            lp->objective_name_coeff[col_name] = f2;
-        }
-        else {
-            // The name must correspond to a constraint.
-            auto constr_ptr = lp->constraints[row_name2];
-            if (constr_ptr != nullptr) {
-                constr_ptr->name_coeff[col_name] = f2;
-            }
-            else { printf("#2 NULL pointer!\n"); }
-        }
-        
-        return 0;
-
-        case 3:
-        row_name2[0] = '\0';
-        data2[0] = '0';
-        data2[1] = '\0';
-        sscanf(line_buf, "%16s %16s %16s %16s %16s", &rhs_name, &row_name1, &data1, &row_name2, &data2);
-        f1 = strtof(data1, NULL);
-        f2 = strtof(data2, NULL);
-        
-        debug_printf("parser: column: %s %s %s %s %s\n", col_name, row_name1, data1, row_name2, data2);
-        {
-            // Handle row_name1 / f1.
-            auto constr_ptr = lp->constraints[row_name1];
-            if (constr_ptr != nullptr) {
-                constr_ptr->rhs = f1;
-            }
-        
-            // Handle row_name2 / f2.
-            if (row_name2[0] == '\0') return 0;
-            constr_ptr = lp->constraints[row_name2];
-            if (constr_ptr !=nullptr) {
-                constr_ptr->rhs = f2;
-            }
-        }
-        return 0;
-
-        case 4:
-
-        sscanf(line_buf, "%16s %16s %16s %16s", &row_type, &row_name1, &col_name, &data1);
-        
-        debug_printf("parser: column: %s %s %s %s\n", row_type, row_name1, col_name, data1);
-        
-        f1 = strtof(data1, NULL);
-        map<string, double> _constr_name_coeff;
-        _constr_name_coeff[col_name] = 1.0;
-        char _type = '<';
-        switch (row_type[0]) {
-            case 'U':
-            if (f1 < 0.0) {
-                // negative upper bound: we substitute z = -x, and add regular constraint z >= f1
-                lp->set_shift(col_name, 0.0);
-                _type = '>';
-                f1 = -f1;
-            }
-            break;
-            case 'L':
-            _type = '>';
-            if (f1 < 0.0) {
-                // negative lower bound: we substitute variable x adding shift: z = x + f1
-                lp->set_shift(col_name, f1);
-                f1 = 0.0;
-            }
+    while (true) 
+    {
+        pos_cur = input.find_first_of("/\\#", pos_start);
+        if (pos_cur == string::npos) {
+            pos_cur = input.length();
             break;
         }
-        
-        // if bound is positive, then a simple constraint is added
-        if (f1 > 0.0) {
-            auto constr_ptr = make_shared<Constraint>(_type, f1);
-            constr_name = string("#BOUND") + tostr<int>(bounds_count++);
-            lp->constraints.emplace(constr_name, constr_ptr);
-            lp->constraints[constr_name]->name_coeff = _constr_name_coeff;
-        }
-        
-        return 0;
+        result += input.substr(pos_start, pos_cur - pos_start);
+        pos_start = input.find_first_of('\n', pos_cur) + 1;
     }
+    result += input.substr(pos_start, pos_cur - pos_start);
 
-    return 0;
+    return result;
 }
+
+bool run_parser_lp(const std::string & input, LinearProgram & lp)
+{
+    std::string stripped_input = remove_comments(input);
+    typedef std::string::const_iterator iterator_type;
+    iterator_type iter = stripped_input.begin();
+    iterator_type const end = stripped_input.end();
+
+    ParserState parser_state = ParserState(lp);
+    
+    bool r = parse(iter, end, parser::lp_rules, parser_state);
+
+    if (r && iter == end) {
+        std::cout << "Parser success." << std::endl;
+        return true;
+    }
+    else
+    {
+        std::cout << "Parser fail." << std::endl;
+        return false;
+    }
+}
+

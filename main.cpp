@@ -1,4 +1,4 @@
-// Copyright (C) 2017-2019 Maciej Drwal
+// Copyright (C) 2019 Maciej Drwal
 // 
 // Permission is granted to copy and distribute verbatim copies and modified
 // versions of this file, provided that the copyright notice and this permission
@@ -11,15 +11,13 @@
 #include "parser.h"
 #include "simplex.h"
 
-using namespace std;
-
 int main(int argc, char ** argv) 
 {
-    cout.precision(4);
-    cout.setf(ios_base::showpoint);
+    std::cout.precision(4);
+    std::cout.setf(std::ios_base::showpoint);
     
     if (argc < 2) {
-        cout << "You must provide a file name." << endl;
+        std::cout << "You must provide a file name." << std::endl;
         return 1;
     }
     
@@ -30,23 +28,23 @@ int main(int argc, char ** argv)
         file_format = MPS_FILE;
     }
     else {
-        cout << "Unrecognized file extension (must be one of: .lp, .mps)." << endl;
+        std::cout << "Unrecognized file extension (must be one of: .lp, .mps)." << std::endl;
         return 1;
     }
     
-    ifstream fin;
+    std::ifstream fin;
     fin.open(argv[1]);
     
     if (!fin) {
-        cout << "Invalid input file name." << endl;
+        std::cout << "Invalid input file name." << std::endl;
         return 1;
     }
 
 
     // Read whole input file instead of separate lines
-    fin.seekg(0, ios::end);
+    fin.seekg(0, std::ios::end);
     size_t size = fin.tellg();
-    string buffer(size, ' ');
+    std::string buffer(size, ' ');
     fin.seekg(0);
     fin.read(&buffer[0], size);
     fin.close();
@@ -55,7 +53,7 @@ int main(int argc, char ** argv)
     //std::stringstream buffer;
     //buffer << fin.rdbuf();
 
-    cout << "Reading file done.\n" << endl;
+    std::cout << "Reading file done.\n" << std::endl;
 
     LinearProgram lp;
     
@@ -68,14 +66,14 @@ int main(int argc, char ** argv)
     //     if (file_format == LP_FILE) {            
     //         if (parse_input_line_lp(line.c_str(), &lp) != 0) {
     //             fin.close();
-    //             cout << "Aborting." << endl;
+    //             std::cout << "Aborting." << std::endl;
     //             return 1;
     //         }
     //     }
     //     else if (file_format == MPS_FILE) {
     //         if (parse_input_line_mps(line.c_str(), &lp) != 0) {
     //             fin.close();
-    //             cout << "Aborting." << endl;
+    //             std::cout << "Aborting." << std::endl;
     //             return 1;
     //         }
     //     }
@@ -88,10 +86,10 @@ int main(int argc, char ** argv)
         }
     }
     catch (char const * msg) {
-        cout << "Exception: " << msg << endl;
+        std::cout << "Exception: " << msg << std::endl;
     }
     
-    cout << "Exiting program." << endl;
+    std::cout << "Exiting program." << std::endl;
     
     return 0;
 }

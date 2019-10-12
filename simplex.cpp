@@ -19,15 +19,21 @@
 #include <f77blas.h>
 #endif
 
-#include "presolve.h"
 #include "simplex.h"
 #include "utils.h"
 
-using namespace std;
+using std::cout;
+using std::endl;
+using std::map;
+using std::vector;
+using std::string;
+using std::set;
+using std::shared_ptr;
+using std::unique_ptr;
 
 int * LinearProgram::ipiv = NULL;
 
-chrono::time_point<chrono::steady_clock> t_start, t_end;
+std::chrono::time_point<std::chrono::steady_clock> t_start;
 
 // Print internal data structures on screen (for debugging).
 void LinearProgram::print_tableau() const
@@ -56,9 +62,9 @@ void print_matrix(double * matrix, int n_rows, int m_cols)
 {
     for (int i = 0; i < n_rows; i++) {
         for (int j = 0; j < m_cols; j++) {
-            cout << scientific << matrix[j * n_rows + i] << '\t';
+            cout << std::scientific << matrix[j * n_rows + i] << '\t';
         }
-        cout << fixed << endl;
+        cout << std::fixed << endl;
     }
 }
 
@@ -66,18 +72,31 @@ template <typename T>
 void print_vector(T * vect, int n)
 {
     for (int i = 0; i < n; i++) {
-        cout << scientific << vect[i] << '\t';
+        cout << std::scientific << vect[i] << '\t';
     }
-    cout << fixed << endl;
+    cout << std::fixed << endl;
 }
 
 // Copies the data read by parser into internal data structures: A, b.
+// Variable names are mapped here to indices using two maps:
+// variable_name_to_id and variable_id_to_name.
+// This should be called just before simplex(), after presolve and all
+// other problem transformations.
 void LinearProgram::initialize_tableau()
 {
+    variable_id_to_name.clear();
+    variable_name_to_id.clear();
+    int next_id = 0;
     int j = 0;
     for (map<string, shared_ptr<Constraint> >::iterator it = constraints.begin(); it != constraints.end(); ++it) {
         for (map<string, double>::iterator jt = it->second->name_coeff.begin(); jt != it->second->name_coeff.end(); ++jt) {
-            int i = variable_names_to_ids[jt->first] * M + j;
+            if (variable_name_to_id.count(jt->first) == 0) {
+                variable_id_to_name[next_id] = jt->first;
+                variable_name_to_id[jt->first] = next_id;
+                next_id++;
+            }
+
+            int i = variable_name_to_id[jt->first] * M + j;
             matrix_A[i] = jt->second;
         }
         vector_b[j++] = it->second->rhs;
@@ -87,17 +106,17 @@ void LinearProgram::initialize_tableau()
 
 inline void measure_time_start()
 {
-    t_start = chrono::steady_clock::now();
+    t_start = std::chrono::steady_clock::now();
 }
 
 inline void print_elapsed_time()
 {
-    t_end = chrono::steady_clock::now();
+    auto t_end = std::chrono::steady_clock::now();
     printf("Elapsed time: %lld s (%lld ms, %lld us, %lld ns)\n", 
-    chrono::duration_cast<chrono::seconds>(t_end - t_start).count(), 
-    chrono::duration_cast<chrono::milliseconds>(t_end - t_start).count(),
-    chrono::duration_cast<chrono::microseconds>(t_end - t_start).count(),
-    chrono::duration_cast<chrono::nanoseconds>(t_end - t_start).count());
+        std::chrono::duration_cast<std::chrono::seconds>(t_end - t_start).count(), 
+        std::chrono::duration_cast<std::chrono::milliseconds>(t_end - t_start).count(),
+        std::chrono::duration_cast<std::chrono::microseconds>(t_end - t_start).count(),
+        std::chrono::duration_cast<std::chrono::nanoseconds>(t_end - t_start).count());
 }
 
 // The main procedure of the solver.
@@ -105,25 +124,24 @@ inline void print_elapsed_time()
 void LinearProgram::solve()
 {        
     measure_time_start();
-    
-    presolve(this);
+
+    presolve.run();
     
     M = constraints.size();
-    N = variable_names_to_ids.size();
+    N = var_lbnd.size();
     
-    printf("problem size:\nN=%d, M=%d\n", N, M);
-    
+    cout << "problem size:\nN=" << N << ", M=" << M << endl;
     cout << "Allocating memory..." << endl;
     
-    vector_b = new double[M];
-    vector_c = new double[N + 2 * M];   // add reserve for slack/artificial variables
-    matrix_A = new double[M * (N + 2 * M)];
+    vector_b = std::make_unique<double[]>(M);
+    vector_c = std::make_unique<double[]>(N + 2 * M);
+    matrix_A = std::make_unique<double[]>(N * (N + 2 * M));
     
-    memset(vector_b, 0, M * sizeof(double));
-    memset(vector_c, 0, (N + 2 * M) * sizeof(double));
-    memset(matrix_A, 0, (M * (N + 2 * M)) * sizeof(double));
-                
-    set<int> init_basis;     // Initial basis.
+    std::fill_n(vector_b.get(), M, 0.0);
+    std::fill_n(vector_c.get(), N + 2 * M, 0.0);
+    std::fill_n(matrix_A.get(), N * (N + 2 * M), 0.0);
+
+    set<string> init_basis;     // Initial basis.
         
     // Add slack variables to inequality constraints, replacing them with equality.
     int num_of_slack_vars = 0;
@@ -140,18 +158,18 @@ void LinearProgram::solve()
             add_variable(var_name);
             
             // If all constraints were inequalities then use slacks for initial basis.
-            if (all_inequalities) init_basis.insert(variable_names_to_ids[var_name]);
-            printf("added slack variable:%s\n", var_name.c_str());
+            if (all_inequalities) init_basis.insert(var_name);
+            cout << "added slack variable: " << var_name << endl;
         }
     }
     int num_of_primal_vars = objective_name_coeff.size();
     
-    N = variable_names_to_ids.size();   // this might have been modified by adding slack variables
+    N = var_lbnd.size();   // this might have been modified by adding slack variables
     
     if (!all_inequalities) {
         // Construct artificial variables for Phase I.
-        int i = 0;
-        printf("Not all constrains are inequalities A <= b, adding artificial variables.\n");
+        int art_var_id = 0;
+        cout << "Not all constrains are inequalities A <= b, adding artificial variables." << endl;
         for (map<string, shared_ptr<Constraint> >::iterator it = constraints.begin(); it != constraints.end(); ++it) {
             if (it->second->rhs < 0.0) {
                 it->second->rhs = -it->second->rhs;
@@ -163,72 +181,80 @@ void LinearProgram::solve()
                     throw "All constraints must be equality at this point.";
                 }
             }
-            string var_name("__ARTIFICIAL" + tostr<int>(i++));
+            string var_name("__ARTIFICIAL" + tostr<int>(art_var_id++));
             it->second->name_coeff[var_name] = 1.0;
             add_variable(var_name);
-            init_basis.insert(variable_names_to_ids[var_name]);
-            printf("added artificial variable: %s\n", var_name.c_str());
+            init_basis.insert(var_name);
+            cout << "added artificial variable: " << var_name << endl;
         }
-        // Objective function: sum of artificial variables.
-        for (int i = 0; i < M; i++) vector_c[num_of_primal_vars + num_of_slack_vars + i] = 1.0;
-        N = variable_names_to_ids.size();   // this has changed after adding artificial variables
+        N = var_lbnd.size();   // this has changed after adding artificial variables
         
         // Solve Phase I LP.
-        printf("*** PHASE I ***\n");
+        cout << "*** PHASE I ***" << endl;
         initialize_tableau();
+        // Objective function: sum of artificial variables.
+        for (int i = 0; i < art_var_id; i++) {
+            string var_name("__ARTIFICIAL" + tostr<int>(i));
+            vector_c[variable_name_to_id[var_name]] = 1.0;
+        }
         print_tableau();   
         simplex(init_basis);
         
-        printf("obj=%f\n", objective_value);
-        
         // Remove artificial variables.
-        i = 0;
+        int i = 0;
         for (map<string, shared_ptr<Constraint> >::iterator it = constraints.begin(); it != constraints.end(); ++it) {
             string var_name = string("__ARTIFICIAL") + tostr<int>(i++);
-            int var_id = variable_names_to_ids[var_name];
+            int var_id = variable_name_to_id[var_name];
 
             // Check if some artificial variable remained in the basis.
-            if (init_basis.count(var_id) > 0) {
+            if (init_basis.count(var_name) > 0) {
                 // TODO: handle this case
                 
-                init_basis.erase(variable_names_to_ids[var_name]);
-                for (map<string, int>::iterator jt = variable_names_to_ids.begin(); jt != variable_names_to_ids.end(); ++jt) {
-                    if (init_basis.count(jt->second) == 0 && (strncmp(jt->first.c_str(), "__ARTIFICIAL", 12) != 0)) {
-                        init_basis.insert(jt->second);
-                        printf("replaced variable %d (%s) by %d (%s) in the basis\n",  var_id, var_name.c_str(), jt->second, jt->first.c_str());
-                        break;
-                    }
-                }
+                // init_basis.erase(var_name);
+                // for (map<string, int>::iterator jt = variable_name_to_id.begin(); jt != variable_name_to_id.end(); ++jt) {
+                //     if (init_basis.count(jt->second) == 0 && (strncmp(jt->first.c_str(), "__ARTIFICIAL", 12) != 0)) {
+                //         init_basis.insert(jt->second);
+                //         printf("replaced variable %d (%s) by %d (%s) in the basis\n",  var_id, var_name.c_str(), jt->second, jt->first.c_str());
+                //         break;
+                //     }
+                // }
                 
-                printf("Artificial variable %s in the basis. Aborting.\n", var_name.c_str());
-                exit(1);
+                std::stringstream msg;
+                msg << "Artificial variable " << var_name << " in the basis.";
+                throw msg.str().c_str();
             }
             
             it->second->name_coeff.erase(var_name);
-            variable_names_to_ids.erase(var_name);
-            variable_ids_to_names.erase(var_id);
-            printf("removed artificial variable:%s\n", var_name.c_str());
+            variable_name_to_id.erase(var_name);
+            variable_id_to_name.erase(var_id);
+            remove_variable(var_name);
+            cout << "removed artificial variable: " << var_name << endl;
         }
-        N = variable_names_to_ids.size();   // this has changed after removing artificial variables
+        N = var_lbnd.size();   // this has changed after removing artificial variables
+        
+        
+        // TODO: ...
+        std::fill_n(vector_b.get(), M, 0.0);
+        std::fill_n(vector_c.get(), N + 2 * M, 0.0);
+        std::fill_n(matrix_A.get(), N * (N + 2 * M), 0.0);
     }
     else {
-        printf("Using slacks for initial basis, skipping Phase I.\n");
-        initialize_tableau();
+        cout << "Using slacks for initial basis, skipping Phase I." << endl;
     }
     
     if (objective_value > 0.0) {
-        printf("LP is infeasible. Aborting.\n");
+        cout << "LP is infeasible. Aborting." << endl;
     }
     else {
+        initialize_tableau();
         // Prepare the original objective function.
         for (map<string, double>::iterator it = objective_name_coeff.begin(); it != objective_name_coeff.end(); ++it) {
-            int i = variable_names_to_ids[it->first];
-            vector_c[i] = (sense =='m') ? it->second : -it->second;
+            int i = variable_name_to_id[it->first];
+            vector_c[i] = (sense == 'm') ? it->second : -it->second;
         }
 
         // Solve Phase II LP.
-        printf("*** PHASE II ***\n");
-        //printf("Problem data:\n");
+        cout << "*** PHASE II ***" << endl;
         print_tableau();
         simplex(init_basis);
     }
@@ -237,11 +263,6 @@ void LinearProgram::solve()
         
     delete ipiv;
     ipiv = NULL;
-    
-    printf("Freeing memory.\n");
-    delete [] matrix_A;
-    delete [] vector_b;
-    delete [] vector_c;
 }
 
 // This functions solves a system of linear equations of the form:
@@ -264,7 +285,7 @@ void LinearProgram::lineq_solve(double * _matrix_A, double * _vector_bx, double 
         if (info != 0) {
             // info < 0: argument "-info" has illegal value
             // info > 0: diagonal element at "info" of the factor U from the factorization is exactly 0
-            printf("dgetrf_ failed with error code %d\n", (int) info);
+            cout << "dgetrf_ failed with error code " << (int) info << endl;
             exit(1);
         }
             
@@ -275,7 +296,7 @@ void LinearProgram::lineq_solve(double * _matrix_A, double * _vector_bx, double 
         dgetrs_(&transpose, &M, &one_int, _matrix_A, &M, ipiv, _vector_cy, &M, &info);
         if (info != 0) {
             // info < 0: argument "-info" has illegal value
-            printf("dgetrs_ #1 failed with error code %d\n", (int) info);
+            cout << "dgetrs_ #1 failed with error code " << (int) info << endl;
             exit(1);
         }
     }
@@ -285,7 +306,7 @@ void LinearProgram::lineq_solve(double * _matrix_A, double * _vector_bx, double 
     dgetrs_(&transpose, &M, &one_int, _matrix_A, &M, ipiv, _vector_bx, &M, &info);
     if (info != 0) {
         // info < 0: argument "-info" has illegal value
-        printf("dgetrs_ #2 failed with error code %d\n", (int) info);
+        cout << "dgetrs_ #2 failed with error code " << (int) info << endl;
         exit(1);
     }
 }
@@ -312,7 +333,7 @@ int LinearProgram::select_leaving_variable_Bland(double * vector_bx, double * ve
     // print_vector<double>(vector_cy, M);
     
     int min_i = -1;
-    double min_lbd = numeric_limits<double>::max();
+    double min_lbd = std::numeric_limits<double>::max();
     for (int i = 0; i < M; i++) {
         if (vector_cy[i] > 0.0) {
             double lbd = vector_bx[i] / vector_cy[i];
@@ -329,7 +350,7 @@ int LinearProgram::select_leaving_variable_Bland(double * vector_bx, double * ve
 int LinearProgram::select_entering_variable_most_neg(double * vector_c_N)
 {
     int min_i = -1;
-    double min_value = numeric_limits<double>::max();
+    double min_value = std::numeric_limits<double>::max();
     for (int i = 0; i < N - M; i++) {
         if (vector_c_N[i] < 0.0 && vector_c_N[i] < min_value) {
             min_i = i;
@@ -339,7 +360,8 @@ int LinearProgram::select_entering_variable_most_neg(double * vector_c_N)
     return min_i;
 }
 
-int LinearProgram::select_leaving_variable_GUB(double * vector_bx, double * vector_cy, double * matrix_A_B, int entering_index)
+// Simple Upper Bound rule for pivoting.
+int LinearProgram::select_leaving_variable_SUB(double * vector_bx, double * vector_cy, double * matrix_A_B, int entering_index)
 {
     // Solve: A_B * d = A(entering_index). Note that matrix_A_B already contains LU factors.
     // Result d is stored in vector_cy.
@@ -347,7 +369,7 @@ int LinearProgram::select_leaving_variable_GUB(double * vector_bx, double * vect
 
     bool need_substitution = false;
     int min_i = -1;
-    double min_theta = numeric_limits<double>::max();
+    double min_theta = std::numeric_limits<double>::max();
     for (int i = 0; i < M; i++) {
         if (vector_cy[i] > 0.0) {
             double t = vector_bx[i] / vector_cy[i];
@@ -360,7 +382,7 @@ int LinearProgram::select_leaving_variable_GUB(double * vector_bx, double * vect
 
     for (int i = 0; i < M; i++) {
         if (vector_cy[i] < 0.0) {
-            double ub = var_ubnd[variable_ids_to_names[basis[i]]];
+            double ub = var_ubnd[variable_id_to_name[basis[i]]];
             double t  = (ub - vector_bx[i]) / (-vector_cy[i]);
             if (t < min_theta) {
                 min_i     = i;
@@ -370,7 +392,7 @@ int LinearProgram::select_leaving_variable_GUB(double * vector_bx, double * vect
         }
     }
 
-    double ub_s = var_ubnd[variable_ids_to_names[non_basis[entering_index]]];
+    double ub_s = var_ubnd[variable_id_to_name[non_basis[entering_index]]];
 
     if (ub_s < min_theta) {
         upper_bound_substitution(non_basis[entering_index], ub_s);
@@ -379,7 +401,7 @@ int LinearProgram::select_leaving_variable_GUB(double * vector_bx, double * vect
     else {
         if (need_substitution) {
             int k = basis[min_i];
-            upper_bound_substitution(k, var_ubnd[variable_ids_to_names[k]]);
+            upper_bound_substitution(k, var_ubnd[variable_id_to_name[k]]);
         }
     }
 
@@ -393,10 +415,10 @@ void LinearProgram::upper_bound_substitution(int var_id, double ub)
 
     // Modify constraints: a_{js} x_s -> -a_{js} x_s, b_j -> b_j - a_{js}*u_s
     for (int i = 0; i < M; i++) {
-        double * a_ptr = matrix_A + var_id * M + i;
+        double * a_ptr = &matrix_A[var_id * M + i];
         double   a     = *a_ptr;
-        vector_b[i] = vector_b[i] - a * ub;
-        *a_ptr = -a;
+        vector_b[i]    = vector_b[i] - a * ub;
+        *a_ptr         = -a;
     }
     
     ub_substitutions[var_id] = !ub_substitutions[var_id];
@@ -409,7 +431,7 @@ void LinearProgram::solution_found(double * vector_bx, double * vector_cy, doubl
 
     for (int i = 0; i < basis.size(); i++) {    
         int var_id = basis[i];
-        string var_name = variable_ids_to_names[var_id];
+        string var_name = variable_id_to_name[var_id];
 
         // Reverse UB-substitution
         if (ub_substitutions[var_id]) {
@@ -419,7 +441,7 @@ void LinearProgram::solution_found(double * vector_bx, double * vector_cy, doubl
 
         // Applying shifts
         for (map<string, double>::iterator kt = var_shifts.begin(); kt != var_shifts.end(); ++kt) {
-            if (variable_names_to_ids[kt->first] == var_id) {
+            if (variable_name_to_id[kt->first] == var_id) {
                 cout << "SHIFTING: basis var " << var_name << " by " << kt->second << endl;
                 vector_bx[i] += kt->second;
             }
@@ -432,7 +454,7 @@ void LinearProgram::solution_found(double * vector_bx, double * vector_cy, doubl
     for (int i = 0; i < non_basis.size(); i++) {
         double q = 0.0;
         int var_id = non_basis[i];
-        string var_name = variable_ids_to_names[var_id];
+        string var_name = variable_id_to_name[var_id];
 
         // Reverse UB-substitution
         if (ub_substitutions[var_id]) {
@@ -442,9 +464,9 @@ void LinearProgram::solution_found(double * vector_bx, double * vector_cy, doubl
             cout << "REVERSING UB-subst of " << var_name << " ub= " << ub << endl;
         }
 
-        // Applying shifts.     
+        // Applying shifts
         for (map<string, double>::iterator kt = var_shifts.begin(); kt != var_shifts.end(); ++kt) {
-            if (variable_names_to_ids[kt->first] == var_id) {
+            if (variable_name_to_id[kt->first] == var_id) {
                 cout << "SHIFTING: non-basis var " << var_name << " by " <<  kt->second << endl;
                 q += kt->second;
             }
@@ -455,11 +477,13 @@ void LinearProgram::solution_found(double * vector_bx, double * vector_cy, doubl
         cost += vector_c[non_basis[i]] * q;
     }
     objective_value = (sense == 'm') ? cost : -cost;
+
+    cout << "OPTIMAL X FOUND.\nValue = " << objective_value << endl;
 }
 
 // The (Revised) Simplex Algorithm.
 // arg_basis : on input: initial basis; on result: final basis
-int LinearProgram::simplex(set<int> & arg_basis)
+int LinearProgram::simplex(set<string> & arg_basis)
 {
     double * matrix_A_B = new double[M * M];
     double * matrix_A_N = new double[M * (N - M)];
@@ -471,7 +495,7 @@ int LinearProgram::simplex(set<int> & arg_basis)
     basis.clear();
     non_basis.clear();
     for (int i = 0; i < N; i++) {
-        if (arg_basis.count(i) == 0) non_basis.push_back(i); else basis.push_back(i);
+        if (arg_basis.count(variable_id_to_name[i]) == 0) non_basis.push_back(i); else basis.push_back(i);
     }
 
     // Initialize upper-bound substitutions.
@@ -491,12 +515,12 @@ int LinearProgram::simplex(set<int> & arg_basis)
         // due to applying upper-bound substitutions.
         int jB = 0, jN = 0;
         for (vector<int>::iterator it = basis.begin(); it != basis.end(); ++it) {
-            memcpy(matrix_A_B + jB * M, matrix_A + (*it) * M, M * sizeof(double));
+            std::copy_n(&matrix_A[(*it) * M], M, matrix_A_B + jB *M);
             vector_c_B[jB] = vector_c[*it];
             jB++;
         }
         for (vector<int>::iterator it = non_basis.begin(); it != non_basis.end(); ++it) {
-            memcpy(matrix_A_N + jN * M, matrix_A + (*it) * M, M * sizeof(double));
+            std::copy_n(&matrix_A[(*it) * M], M, matrix_A_N + jN * M);
             vector_c_N[jN] = vector_c[*it];
             jN++;
         }
@@ -511,8 +535,8 @@ int LinearProgram::simplex(set<int> & arg_basis)
         print_vector<double>(vector_c_N, N - M);
     
         // Compute x = A_B^{-1} * b and y = (A_B^T)^{-1} * c_B
-        memcpy(vector_bx, vector_b, M * sizeof(double));
-        memcpy(vector_cy, vector_c_B, M * sizeof(double));
+        std::copy_n(vector_b.get(), M, vector_bx);
+        std::copy_n(vector_c_B, M, vector_cy);
         lineq_solve(matrix_A_B, vector_bx, vector_cy);
     
         cout << "solved x=\n";
@@ -539,18 +563,16 @@ int LinearProgram::simplex(set<int> & arg_basis)
         if (entering_index == -1) {
             solution_found(vector_bx, vector_cy, vector_c_B);
             arg_basis.clear();
-            for (int i = 0; i < M; i++) arg_basis.insert(basis[i]);
-
-            cout << "OPTIMAL X FOUND.\nValue = " << objective_value << endl;
+            for (int i = 0; i < M; i++) arg_basis.insert(variable_id_to_name[basis[i]]);
             break;
         }
 
         // Copy the entering column A_q into vector_cy.
-        memcpy(vector_cy, matrix_A + (non_basis[entering_index] * M), M * sizeof(double));
+        std::copy_n(&matrix_A[non_basis[entering_index] * M], M, vector_cy);
         
         // 2) Select the leaving variable.
         // int leaving_index = select_leaving_variable_Bland(vector_bx, vector_cy, matrix_A_B);
-        int leaving_index = select_leaving_variable_GUB(vector_bx, vector_cy, matrix_A_B, entering_index);
+        int leaving_index = select_leaving_variable_SUB(vector_bx, vector_cy, matrix_A_B, entering_index);
 
         if (leaving_index == -1) {
             cout << "LP IS UNBOUNDED.\n";
@@ -566,7 +588,7 @@ int LinearProgram::simplex(set<int> & arg_basis)
     }
 
     if (iteration_count == iteration_limit) {
-        throw "MAXIMUM NUMER OF SIMPLEX ITERATIONS REACHED";
+        throw "MAXIMUM NUMBER OF SIMPLEX ITERATIONS REACHED";
     }
     
     delete [] matrix_A_B;
@@ -584,7 +606,7 @@ void LinearProgram::write(const string & filename) const
 {
     cout << "Writing solution...\n";
     
-    ofstream outfile;
+    std::ofstream outfile;
     outfile.open(filename);
     
     outfile << "<?xml version = \"1.0\" encoding=\"UTF-8\" standalone=\"yes\"?>" << endl;
@@ -604,15 +626,35 @@ void LinearProgram::write(const string & filename) const
 // TODO: change this in order to allow problem manipulation after solving.
 void LinearProgram::add_variable(const string & var_name)
 {
-    static int next_id = 0;
-    variable_names_to_ids[var_name] = next_id;
-    variable_ids_to_names[next_id] = var_name;
-    next_id++;
+
     var_lbnd[var_name] = 0.0;   // set default bounds
     var_ubnd[var_name] = std::numeric_limits<double>::max();
 }
 
+void LinearProgram::remove_variable(const string & var_name)
+{
+    var_lbnd.erase(var_name);
+    var_ubnd.erase(var_name);
+}
+
+// // TODO: test it
+// void LinearProgram::remove_variable(const string & var_name)
+// {
+//     int var_id = variable_names_to_ids[var_name];
+//     variable_names_to_ids.erase(var_name);
+//     for (int i = var_id + 1; i < next_id; i++) {
+//         string var_name = variable_ids_to_names[i];
+//         variable_ids_to_names[i-1] = var_name;
+//         variable_names_to_ids[var_name] = i-1;
+//     }
+//     variable_ids_to_names.erase(next_id - 1);
+//     next_id--;
+//     var_lbnd.erase(var_name);
+//     var_ubnd.erase(var_name);
+// }
+
 bool LinearProgram::has_variable(const string & var_name) const
 {
-    return (0 != variable_names_to_ids.count(var_name));
+    return (0 != var_lbnd.count(var_name));
 }
+

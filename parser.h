@@ -12,10 +12,10 @@ class LinearProgram;
 
 enum { LP_FILE, MPS_FILE } file_format;
 
+bool run_parser_lp(const std::string& input, LinearProgram& lp);
+
 // Old hand-written state machine parsers.
 int parse_input_line_lp(const char * buffer, LinearProgram * lp);
 int parse_input_line_mps(const char * buffer, LinearProgram * lp);
-
-bool run_parser_lp(const std::string & input, LinearProgram & lp);
 
 #endif

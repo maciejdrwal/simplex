@@ -9,6 +9,7 @@
 #include <fstream>
 
 #include "parser.h"
+#include "presolve.h"
 #include "simplex.h"
 
 int main(int argc, char ** argv) 
@@ -20,7 +21,7 @@ int main(int argc, char ** argv)
         std::cout << "You must provide a file name." << std::endl;
         return 1;
     }
-    
+
     if (strcmp(strrchr(argv[1], '.'), ".lp") == 0) {
         file_format = LP_FILE;
     }
@@ -56,7 +57,8 @@ int main(int argc, char ** argv)
     std::cout << "Reading file done.\n" << std::endl;
 
     LinearProgram lp;
-    
+    Presolve presolve(lp);
+
     // Code used to feed old hand-written parsers (non-Spirit)
     // string line;
     // while (fin) {        
@@ -81,11 +83,12 @@ int main(int argc, char ** argv)
 
     try {
         if (run_parser_lp(buffer, lp)) {
+            presolve.run();
             lp.solve();
             lp.write("sol_test.xml");
         }
     }
-    catch (char const * msg) {
+    catch (const std::string& msg) {
         std::cout << "Exception: " << msg << std::endl;
     }
     

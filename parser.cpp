@@ -13,14 +13,14 @@
 #include "simplex.h"
 #include "utils.h"
 
-using std::string;
+struct ParserState 
+{
+    ParserState(LinearProgram& _lp) : lp(_lp), var_coeff_cache(0.0), sign_cache(1.0), label_cache("") {}
 
-struct ParserState {
-    LinearProgram & lp;
-    double _var_coeff_cache;
-    double _sign_cache;
-    string _label_cache;
-    ParserState(LinearProgram & _lp) : lp(_lp), _var_coeff_cache(0.0), _sign_cache(1.0), _label_cache("") {}
+    LinearProgram& lp;
+    double var_coeff_cache;
+    double sign_cache;
+    std::string label_cache;
 };
 
 namespace x3 = boost::spirit::x3;
@@ -41,11 +41,11 @@ namespace parser
     using ascii::space;
 
     // Semantic actions definitions
-    auto set_minimize       = [](auto & ctx) { _val(ctx).lp.set_sense('m'); };
-    auto set_maximize       = [](auto & ctx) { _val(ctx).lp.set_sense('M'); };
-    auto set_obj_label      = [](auto & ctx) { _val(ctx).lp.set_objective_label(_attr(ctx)); };
-    auto add_obj_fun_coeff  = [](auto & ctx) { _val(ctx)._var_coeff_cache = _attr(ctx); };
-    auto add_obj_fun_var    = [](auto & ctx) 
+    auto set_minimize       = [](auto& ctx) { _val(ctx).lp.set_sense('m'); };
+    auto set_maximize       = [](auto& ctx) { _val(ctx).lp.set_sense('M'); };
+    auto set_obj_label      = [](auto& ctx) { _val(ctx).lp.set_objective_label(_attr(ctx)); };
+    auto add_obj_fun_coeff  = [](auto& ctx) { _val(ctx).var_coeff_cache = _attr(ctx); };
+    auto add_obj_fun_var    = [](auto& ctx) 
     {
         // create new variable and store associated obj.fun. coefficient
         auto var_name = _attr(ctx);
@@ -54,39 +54,39 @@ namespace parser
         }
         _val(ctx).lp.add_variable(var_name); 
         _val(ctx).lp.objective_name_coeff[var_name] = 
-            _val(ctx)._sign_cache * _val(ctx)._var_coeff_cache;
+            _val(ctx).sign_cache * _val(ctx).var_coeff_cache;
     };
-    auto neg_var_coeff      = [](auto & ctx) { _val(ctx)._sign_cache = -1; };
-    auto term_parsed        = [](auto & ctx) 
+    auto neg_var_coeff      = [](auto& ctx) { _val(ctx).sign_cache = -1; };
+    auto term_parsed        = [](auto& ctx) 
     { 
-        _val(ctx)._sign_cache = 1;
-        _val(ctx)._var_coeff_cache = 1; 
+        _val(ctx).sign_cache = 1;
+        _val(ctx).var_coeff_cache = 1; 
     };
-    auto add_obj_fun_const  = [](auto & ctx) { _val(ctx).lp.set_obj_value_shift(_attr(ctx)); };
+    auto add_obj_fun_const  = [](auto& ctx) { _val(ctx).lp.set_obj_value_shift(_attr(ctx)); };
 
-    auto set_constr_label   = [](auto & ctx) 
+    auto set_constr_label   = [](auto& ctx) 
     {
         // create labeled constraint
-        auto constr_ptr = std::make_shared<Constraint>();
-        _val(ctx)._label_cache = _attr(ctx); 
-        _val(ctx).lp.constraints[_attr(ctx)] = constr_ptr;
+        const auto& constraint = Constraint();
+        _val(ctx).label_cache = _attr(ctx); 
+        _val(ctx).lp.constraints.emplace(_attr(ctx), constraint);
     };
-    auto add_constr_coeff   = [](auto & ctx) { _val(ctx)._var_coeff_cache = _attr(ctx); };
-    auto add_constr_var     = [](auto & ctx) 
+    auto add_constr_coeff   = [](auto& ctx) { _val(ctx).var_coeff_cache = _attr(ctx); };
+    auto add_constr_var     = [](auto& ctx) 
     {
-        auto constr_label = _val(ctx)._label_cache;
+        auto& constr_label = _val(ctx).label_cache;
         if (constr_label == "") {
             // no label was defined by user; create new constraint with default label
-            auto constr_ptr = std::make_shared<Constraint>();
-            constr_label = string("CONSTR") + tostr<size_t>(_val(ctx).lp.constraints.size());
-            _val(ctx)._label_cache = constr_label;
-            _val(ctx).lp.constraints[constr_label] = constr_ptr;
+            const auto& constraint = Constraint();
+            constr_label = std::string("CONSTR") + tostr<size_t>(_val(ctx).lp.constraints.size());
+            _val(ctx).label_cache = constr_label;
+            _val(ctx).lp.constraints.emplace(constr_label, constraint);
         }
 
         auto var_name = _attr(ctx);
 
-        if (_val(ctx).lp.constraints[constr_label]->name_coeff.count(var_name) != 0) {
-            throw (string("Parser: variable already defined in constraint") + constr_label).c_str();
+        if (_val(ctx).lp.constraints[constr_label].name_coeff.count(var_name) != 0) {
+            throw (std::string("Parser: variable already defined in constraint") + constr_label).c_str();
         }
 
         if (!_val(ctx).lp.has_variable(var_name)) {
@@ -94,59 +94,60 @@ namespace parser
             _val(ctx).lp.add_variable(var_name);
         }
 
-        auto coeff = _val(ctx)._var_coeff_cache;
-        auto sign  = _val(ctx)._sign_cache;
-        _val(ctx).lp.constraints[constr_label]->name_coeff[var_name] = sign * coeff;
+        auto coeff = _val(ctx).var_coeff_cache;
+        auto sign  = _val(ctx).sign_cache;
+        _val(ctx).lp.constraints[constr_label].name_coeff[var_name] = sign * coeff;
     };
 
-    auto add_constr_type = [](auto & ctx) 
+    auto add_constr_type = [](auto& ctx) 
     { 
-        _val(ctx).lp.constraints[_val(ctx)._label_cache]->type = _attr(ctx);
+        _val(ctx).lp.constraints[_val(ctx).label_cache].type = _attr(ctx);
     };
-    auto add_constr_rhs  = [](auto & ctx) 
+    auto add_constr_rhs  = [](auto& ctx) 
     {
         double _rhs = _attr(ctx);
-        _val(ctx).lp.constraints[_val(ctx)._label_cache]->rhs = _rhs;
-        auto op = _val(ctx).lp.constraints[_val(ctx)._label_cache]->type;
+        _val(ctx).lp.constraints[_val(ctx).label_cache].rhs = _rhs;
+        auto op = _val(ctx).lp.constraints[_val(ctx).label_cache].type;
         if ((op == '<' && _rhs < 0.0) ||
             (op == '>' && _rhs > 0.0) ||
             (op == '=')) _val(ctx).lp.set_all_inequalities(false);
-        _val(ctx)._label_cache = "";
+        _val(ctx).label_cache = "";
     };
 
-    auto add_lb_constr   = [](auto & ctx) 
+    auto add_lb_constr   = [](auto& ctx) 
     { 
-        auto lb = _val(ctx)._var_coeff_cache;  // now it contains LB
+        auto lb = _val(ctx).var_coeff_cache;  // now it contains LB
         auto var_name = _attr(ctx);
-        _val(ctx)._label_cache = var_name;  // store var_name, in case we need to add UB
+        _val(ctx).label_cache = var_name;  // store var_name, in case we need to add UB
         if (_isfloatzero(lb)) return;
         _val(ctx).lp.var_lbnd[var_name] = lb;
     };
-    auto add_ub_constr     = [](auto & ctx)
+    auto add_ub_constr     = [](auto& ctx)
     {
-        auto var_name = _val(ctx)._label_cache;    // now it contains var_name
+        auto var_name = _val(ctx).label_cache;    // now it contains var_name
         auto ub = _attr(ctx);
         _val(ctx).lp.var_ubnd[var_name] = ub;
     };
-    auto store_ub_var_name = [](auto & ctx) { _val(ctx)._label_cache = _attr(ctx); };
-    auto add_inf_lb        = [](auto & ctx) 
+    auto store_ub_var_name = [](auto& ctx) { _val(ctx).label_cache = _attr(ctx); };
+    auto add_inf_lb        = [](auto& ctx) 
     {
         auto lb = std::numeric_limits<double>::min();
-        _val(ctx)._var_coeff_cache = lb; 
+        _val(ctx).var_coeff_cache = lb; 
     };
-    auto add_inf_ub        = [](auto & ctx)
+    auto add_inf_ub        = [](auto& ctx)
     {
-        auto var_name = _val(ctx)._label_cache;    // now it contains var_name
+        auto var_name = _val(ctx).label_cache;    // now it contains var_name
         auto ub = std::numeric_limits<double>::max();
         _val(ctx).lp.var_ubnd[var_name] = ub;
     };
 
-    auto print_attr = [](auto & ctx) { std::cout << _attr(ctx) << std::endl; };
+    auto print_attr = [](auto& ctx) { std::cout << _attr(ctx) << std::endl; };
 
     // Grammar rules definitions
     // TODO: handle properly the constant objective function, e.g., obj: 0
 
-    struct keywords_t : x3::symbols<x3::unused_type> {
+    struct keywords_t : x3::symbols<x3::unused_type> 
+    {
         keywords_t() {
             add("Subject")
                ("Bounds")
@@ -156,30 +157,30 @@ namespace parser
         }
     } const keywords;
 
-    auto const distinct_keywords = lexeme[no_case[keywords] >> !(alnum | '_')];
+    const auto distinct_keywords = lexeme[no_case[keywords] >> !(alnum | '_')];
 
     x3::rule<struct identifier_tag, std::string> const identifier ("identifier");
-    auto const identifier_def = lexeme[+(alpha | '_') >> *(alnum | '_')] - distinct_keywords;
+    const auto identifier_def = lexeme[+(alpha | '_') >> *(alnum | '_')] - distinct_keywords;
 
     BOOST_SPIRIT_DEFINE(identifier);
 
-    auto const obj_fun_term =
+    const auto obj_fun_term =
            -(double_ [add_obj_fun_coeff])
         >> identifier [add_obj_fun_var]
     ;
 
-    auto const obj_fun_expr =
+    const auto obj_fun_expr =
            -(identifier >> ':') [set_obj_label]
         >> -(char_('+') | char_('-')[neg_var_coeff]) >> obj_fun_term [term_parsed]
         >> *((char_('+') | char_('-')[neg_var_coeff]) > obj_fun_term [term_parsed])
     ;
 
-    auto const constr_term =
+    const auto constr_term =
            -(double_ [add_constr_coeff])
         >> identifier [add_constr_var]
     ;
 
-    auto const constraint_expr = 
+    const auto constraint_expr = 
         -(identifier >> ':') [set_constr_label]
         >> 
         (
@@ -190,7 +191,7 @@ namespace parser
         )
     ;
 
-    auto const bound_expr =
+    const auto bound_expr =
         ((double_ [add_constr_coeff] | ('-' >> (no_case["Inf"] | no_case["Infinity"]) [add_inf_lb]))
             >> lit("<=") >> identifier [add_lb_constr] 
             >> -(lit("<=") >> double_ [add_ub_constr]))
@@ -201,7 +202,7 @@ namespace parser
     ;
 
     x3::rule<class lp_rules, ParserState> const lp_rules ("lp_rules");
-    auto const lp_rules_def =
+    const auto lp_rules_def =
         skip(space)[
                (no_case["Minimize"] [set_minimize] | no_case["Maximize"] [set_maximize])
             >> -char_(':')
@@ -217,7 +218,7 @@ namespace parser
     BOOST_SPIRIT_DEFINE(lp_rules);
 }
 
-std::string remove_comments(const std::string & input)
+std::string remove_comments(const std::string& input)
 {
     std::string result("");
     size_t pos_start = 0, pos_cur = 0;
@@ -225,7 +226,7 @@ std::string remove_comments(const std::string & input)
     while (true) 
     {
         pos_cur = input.find_first_of("/\\#", pos_start);
-        if (pos_cur == string::npos) {
+        if (pos_cur == std::string::npos) {
             pos_cur = input.length();
             break;
         }
@@ -237,14 +238,13 @@ std::string remove_comments(const std::string & input)
     return result;
 }
 
-bool run_parser_lp(const std::string & input, LinearProgram & lp)
+bool run_parser_lp(const std::string& input, LinearProgram& lp)
 {
     std::string stripped_input = remove_comments(input);
-    typedef std::string::const_iterator iterator_type;
-    iterator_type iter = stripped_input.begin();
-    iterator_type const end = stripped_input.end();
+    auto iter = stripped_input.begin();
+    const auto end = stripped_input.end();
 
-    ParserState parser_state = ParserState(lp);
+    ParserState parser_state{ lp };
     
     bool r = parse(iter, end, parser::lp_rules, parser_state);
 
@@ -252,8 +252,7 @@ bool run_parser_lp(const std::string & input, LinearProgram & lp)
         std::cout << "Parser success." << std::endl;
         return true;
     }
-    else
-    {
+    else {
         std::cout << "Parser fail." << std::endl;
         return false;
     }

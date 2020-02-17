@@ -1,44 +1,44 @@
 TARGET = simplex
-DEBUG = 1
+DEBUG = 0
 OS := $(shell uname)
+
+INCLUDES = -I../boost_1_71_0/
+LIBS =
 
 ifeq ($(OS), Darwin)
 CXX = clang++
-CXXFLAGS = -Wno-format -std=c++14 -I./extern/boost_1_71_0/
+CXXFLAGS = -std=c++17 $(INCLUDES)
 LDFLAGS = -v -framework Accelerate
 endif
 
 ifeq ($(OS), Linux)
 CXX = g++
-CXXFLAGS = -Wno-format -std=c++14 -I./extern/include/ -I./extern/boost_1_71_0/
-LDFLAGS = -v -L../extern/lib/ -lopenblas
+CXXFLAGS = -Wno-format -std=c++17
+LDFLAGS = -v -lopenblas
 endif
 
 ifeq ($(DEBUG), 1)
 CXXFLAGS += -g -DDEBUG
 else
-CXXFLAGS += -O2
+CXXFLAGS += -O3
 endif
 
+SRCS = $(wildcard *.cpp)
+OBJS = $(SRCS:.cpp=.o)
+DEPS = $(OBJS:.o=.d)
 
-src = $(wildcard *.cpp)
-obj = $(src:.cpp=.o)
-dep = $(obj:.o=.d)
+all: $(TARGET)
 
-$(TARGET) : $(obj)
-	$(CXX) -o $@ $^ $(LDFLAGS)
+$(TARGET): $(OBJS)
+	$(CXX) -o $@ $^ $(LIBS) $(LDFLAGS)
 
--include $(dep)
+-include $(DEPS)
 
-$.d : $.cpp
-	@$(CXX) $(CXXFLAGS) $< -MM -MT $(@:.d=.o) >$@
+%.d: %.cpp
+	$(CXX) $(CXXFLAGS) $< -MM -MP -MT $(@:.d=.o) >$@
 
-.PHONY: clean
 clean:
-	rm -rf $(obj) $(TARGET)
-
-.PHONY: cleandep
-cleandep:
-	rm -rf $(dep)
+	$(RM) $(SRCS:.cpp=.o) $(SRCS:.cpp=.d)
+	$(RM) $(TARGET)
 
 print-%  : ; @echo $* = $($*)

@@ -58,7 +58,7 @@ void LinearProgram::print_tableau() const
     printf("\n");
 }
 
-void print_matrix(double * matrix, int n_rows, int m_cols)
+void print_matrix(double* matrix, int n_rows, int m_cols)
 {
     for (int i = 0; i < n_rows; i++) {
         for (int j = 0; j < m_cols; j++) {
@@ -69,7 +69,7 @@ void print_matrix(double * matrix, int n_rows, int m_cols)
 }
 
 template <typename T>
-void print_vector(T * vect, int n)
+void print_vector(T* vect, int n)
 {
     for (int i = 0; i < n; i++) {
         cout << std::scientific << vect[i] << '\t';
@@ -88,19 +88,21 @@ void LinearProgram::initialize_tableau()
     variable_name_to_id.clear();
     int next_id = 0;
     int j = 0;
-    for (map<string, shared_ptr<Constraint> >::iterator it = constraints.begin(); it != constraints.end(); ++it) {
-        for (map<string, double>::iterator jt = it->second->name_coeff.begin(); jt != it->second->name_coeff.end(); ++jt) {
-            if (variable_name_to_id.count(jt->first) == 0) {
-                variable_id_to_name[next_id] = jt->first;
-                variable_name_to_id[jt->first] = next_id;
+
+    for (const auto& constraint : constraints) {
+        for (const auto& jt : constraint.second.name_coeff) {
+            if (variable_name_to_id.count(jt.first) == 0) {
+                variable_id_to_name[next_id] = jt.first;
+                variable_name_to_id[jt.first] = next_id;
                 next_id++;
             }
 
-            int i = variable_name_to_id[jt->first] * M + j;
-            matrix_A[i] = jt->second;
+            int i = variable_name_to_id[jt.first] * M + j;
+            matrix_A[i] = jt.second;
         }
-        vector_b[j++] = it->second->rhs;
+        vector_b[j++] = constraint.second.rhs;
     }
+
     objective_value = 0.0;
 }
 
@@ -124,8 +126,6 @@ inline void print_elapsed_time()
 void LinearProgram::solve()
 {        
     measure_time_start();
-
-    presolve.run();
     
     M = constraints.size();
     N = var_lbnd.size();
@@ -145,16 +145,16 @@ void LinearProgram::solve()
         
     // Add slack variables to inequality constraints, replacing them with equality.
     int num_of_slack_vars = 0;
-    for (map<string, shared_ptr<Constraint> >::iterator it = constraints.begin(); it != constraints.end(); ++it) {
-        if (it->second->type != '=') {
+    for (auto& constraint : constraints) {
+        if (constraint.second.type != '=') {
             string var_name("__SLACK" + tostr<int>(num_of_slack_vars++));
-            if (it->second->type == '<') {
-                it->second->name_coeff[var_name] = 1.0;
+            if (constraint.second.type == '<') {
+                constraint.second.name_coeff[var_name] = 1.0;
             }
-            if (it->second->type == '>') {
-                it->second->name_coeff[var_name] = -1.0;
+            if (constraint.second.type == '>') {
+                constraint.second.name_coeff[var_name] = -1.0;
             }
-            it->second->type = '=';
+            constraint.second.type = '=';
             add_variable(var_name);
             
             // If all constraints were inequalities then use slacks for initial basis.
@@ -170,19 +170,20 @@ void LinearProgram::solve()
         // Construct artificial variables for Phase I.
         int art_var_id = 0;
         cout << "Not all constrains are inequalities A <= b, adding artificial variables." << endl;
-        for (map<string, shared_ptr<Constraint> >::iterator it = constraints.begin(); it != constraints.end(); ++it) {
-            if (it->second->rhs < 0.0) {
-                it->second->rhs = -it->second->rhs;
-                for (map<string, double>::iterator jt = it->second->name_coeff.begin(); jt != it->second->name_coeff.end(); ++jt) {
-                    jt->second = -jt->second;
+        for (auto& constraint : constraints) {
+            if (constraint.second.rhs < 0.0) {
+                constraint.second.rhs *= 1.0;
+                
+                for (auto& jt : constraint.second.name_coeff) {
+                    jt.second = -jt.second;
                 }
                 // Note: at this point there should be no inequality constraints
-                if (it->second->type == '<' || it->second->type == '>') {
+                if (constraint.second.type == '<' || constraint.second.type == '>') {
                     throw "All constraints must be equality at this point.";
                 }
             }
             string var_name("__ARTIFICIAL" + tostr<int>(art_var_id++));
-            it->second->name_coeff[var_name] = 1.0;
+            constraint.second.name_coeff[var_name] = 1.0;
             add_variable(var_name);
             init_basis.insert(var_name);
             cout << "added artificial variable: " << var_name << endl;
@@ -202,7 +203,7 @@ void LinearProgram::solve()
         
         // Remove artificial variables.
         int i = 0;
-        for (map<string, shared_ptr<Constraint> >::iterator it = constraints.begin(); it != constraints.end(); ++it) {
+        for (auto& constraint : constraints) {
             string var_name = string("__ARTIFICIAL") + tostr<int>(i++);
             int var_id = variable_name_to_id[var_name];
 
@@ -224,7 +225,7 @@ void LinearProgram::solve()
                 throw msg.str().c_str();
             }
             
-            it->second->name_coeff.erase(var_name);
+            constraint.second.name_coeff.erase(var_name);
             variable_name_to_id.erase(var_name);
             variable_id_to_name.erase(var_id);
             remove_variable(var_name);
@@ -248,9 +249,10 @@ void LinearProgram::solve()
     else {
         initialize_tableau();
         // Prepare the original objective function.
-        for (map<string, double>::iterator it = objective_name_coeff.begin(); it != objective_name_coeff.end(); ++it) {
-            int i = variable_name_to_id[it->first];
-            vector_c[i] = (sense == 'm') ? it->second : -it->second;
+        
+        for (const auto& name_coeff : objective_name_coeff) {
+            int i = variable_name_to_id[name_coeff.first];
+            vector_c[i] = (sense == 'm') ? name_coeff.second : -name_coeff.second;
         }
 
         // Solve Phase II LP.
@@ -272,7 +274,7 @@ void LinearProgram::solve()
 // A^T * y = c
 // The result is stored in _vector_cy, thus enough space must be allocated.
 // If factorize = false then _matrix_A must contain LU factors of A on input.
-void LinearProgram::lineq_solve(double * _matrix_A, double * _vector_bx, double * _vector_cy, bool factorize = true)
+void LinearProgram::lineq_solve(double* _matrix_A, double* _vector_bx, double* _vector_cy, bool factorize = true)
 {
     int info;
     int one_int = 1;
@@ -313,7 +315,7 @@ void LinearProgram::lineq_solve(double * _matrix_A, double * _vector_bx, double 
 
 // Bland's rule for pivoting.
 // Choose entering index to be lexicographically first with s_j < 0.
-int LinearProgram::select_entering_variable_Bland(double * vector_c_N)
+int LinearProgram::select_entering_variable_Bland(double* vector_c_N)
 {
     for (int i = 0; i < N - M; i++) {
         if (vector_c_N[i] < 0.0) return i;
@@ -324,7 +326,7 @@ int LinearProgram::select_entering_variable_Bland(double * vector_c_N)
 // Bland's rule for pivoting.
 // Choose leaving index to be lexicographically first with min{ x_i / d_i, d_i > 0 }, 
 // d = A_B^{-1} * A(entering_index)
-int LinearProgram::select_leaving_variable_Bland(double * vector_bx, double * vector_cy, double * matrix_A_B)
+int LinearProgram::select_leaving_variable_Bland(double* vector_bx, double* vector_cy, double* matrix_A_B)
 {
     // Solve: A_B * d = A(entering_index). Note that matrix_A_B already contains LU factors.
     lineq_solve(matrix_A_B, vector_cy, NULL, false);
@@ -347,7 +349,7 @@ int LinearProgram::select_leaving_variable_Bland(double * vector_bx, double * ve
 }
 
 // Choose the most negative value among s_j < 0.
-int LinearProgram::select_entering_variable_most_neg(double * vector_c_N)
+int LinearProgram::select_entering_variable_most_neg(double* vector_c_N)
 {
     int min_i = -1;
     double min_value = std::numeric_limits<double>::max();
@@ -361,7 +363,7 @@ int LinearProgram::select_entering_variable_most_neg(double * vector_c_N)
 }
 
 // Simple Upper Bound rule for pivoting.
-int LinearProgram::select_leaving_variable_SUB(double * vector_bx, double * vector_cy, double * matrix_A_B, int entering_index)
+int LinearProgram::select_leaving_variable_SUB(double* vector_bx, double* vector_cy, double* matrix_A_B, int entering_index)
 {
     // Solve: A_B * d = A(entering_index). Note that matrix_A_B already contains LU factors.
     // Result d is stored in vector_cy.
@@ -415,7 +417,7 @@ void LinearProgram::upper_bound_substitution(int var_id, double ub)
 
     // Modify constraints: a_{js} x_s -> -a_{js} x_s, b_j -> b_j - a_{js}*u_s
     for (int i = 0; i < M; i++) {
-        double * a_ptr = &matrix_A[var_id * M + i];
+        double* a_ptr = &matrix_A[var_id * M + i];
         double   a     = *a_ptr;
         vector_b[i]    = vector_b[i] - a * ub;
         *a_ptr         = -a;
@@ -424,7 +426,7 @@ void LinearProgram::upper_bound_substitution(int var_id, double ub)
     ub_substitutions[var_id] = !ub_substitutions[var_id];
 }
 
-void LinearProgram::solution_found(double * vector_bx, double * vector_cy, double * vector_c_B)
+void LinearProgram::solution_found(double* vector_bx, double* vector_cy, double* vector_c_B)
 {
     double cost = 0.0;
     solution.clear();
@@ -485,12 +487,12 @@ void LinearProgram::solution_found(double * vector_bx, double * vector_cy, doubl
 // arg_basis : on input: initial basis; on result: final basis
 int LinearProgram::simplex(set<string> & arg_basis)
 {
-    double * matrix_A_B = new double[M * M];
-    double * matrix_A_N = new double[M * (N - M)];
-    double * vector_c_B = new double[M];
-    double * vector_c_N = new double[N - M];
-    double * vector_bx = new double[M];
-    double * vector_cy = new double[N];
+    double* matrix_A_B = new double[M * M];
+    double* matrix_A_N = new double[M * (N - M)];
+    double* vector_c_B = new double[M];
+    double* vector_c_N = new double[N - M];
+    double* vector_bx = new double[M];
+    double* vector_cy = new double[N];
     
     basis.clear();
     non_basis.clear();
@@ -620,13 +622,12 @@ void LinearProgram::write(const string & filename) const
 }
 
 // Note: each variable has ID that corresponds to that variable's position
-// in the computation array double * vector_c, and is also used, e.g., to 
+// in the computation array vector_c, and is also used, e.g., to 
 // indicate basic/non-basic variables. Thus it is currently not allowed
 // to add variables after removing some other variables.
 // TODO: change this in order to allow problem manipulation after solving.
 void LinearProgram::add_variable(const string & var_name)
 {
-
     var_lbnd[var_name] = 0.0;   // set default bounds
     var_ubnd[var_name] = std::numeric_limits<double>::max();
 }
@@ -636,22 +637,6 @@ void LinearProgram::remove_variable(const string & var_name)
     var_lbnd.erase(var_name);
     var_ubnd.erase(var_name);
 }
-
-// // TODO: test it
-// void LinearProgram::remove_variable(const string & var_name)
-// {
-//     int var_id = variable_names_to_ids[var_name];
-//     variable_names_to_ids.erase(var_name);
-//     for (int i = var_id + 1; i < next_id; i++) {
-//         string var_name = variable_ids_to_names[i];
-//         variable_ids_to_names[i-1] = var_name;
-//         variable_names_to_ids[var_name] = i-1;
-//     }
-//     variable_ids_to_names.erase(next_id - 1);
-//     next_id--;
-//     var_lbnd.erase(var_name);
-//     var_ubnd.erase(var_name);
-// }
 
 bool LinearProgram::has_variable(const string & var_name) const
 {

@@ -31,7 +31,7 @@ Change into cloned `OpenBLAS`, and run
 
 ### Boost Spirit X3
 
-Unzip and put `boost_1_71_0` (or later) into `extern/` directory (no build/linking is required for Spirit).
+Unzip and put [`boost_1_81_0`](https://www.boost.org/) (or later) into current directory (no build/linking is required for Spirit).
 
 ## Use
 

@@ -8,28 +8,33 @@
 #ifndef _PRESOLVE_H_
 #define _PRESOLVE_H_
 
-class LinearProgram;
+#include <string>
 
-class Presolve
+namespace simplex
 {
-public:
-	Presolve(LinearProgram& lp, bool reductions_enabled = true) 
-		: m_lp(lp), b_reductions_enabled(reductions_enabled) {}
-	
-	~Presolve() = default;
+	class LinearProgram;
 
-	void run();
+	class Presolve
+	{
+	public:
+		Presolve(LinearProgram & lp, bool reductions_enabled = true)
+			: m_lp(lp), b_reductions_enabled(reductions_enabled) {}
 
-private:
-	LinearProgram& m_lp;
-	bool b_reductions_enabled;
+		~Presolve() = default;
 
-	void eliminate_lbs();
-	void apply_reductions();
-	void fix_variable(const std::string& var_name, double values);
+		void run();
 
-    void set_shift(const std::string& var_name, double value);
-    double get_shift(const std::string& var_name) const;
-};
+	private:
+		LinearProgram & m_lp;
+		bool b_reductions_enabled;
+
+		void eliminate_lbs();
+		void apply_reductions();
+		void fix_variable(const std::string & var_name, double values);
+
+		void set_shift(const std::string & var_name, double value);
+		double get_shift(const std::string & var_name) const;
+	};
+}
 
 #endif

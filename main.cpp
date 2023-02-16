@@ -17,18 +17,24 @@ int main(int argc, char ** argv)
     std::cout.precision(4);
     std::cout.setf(std::ios_base::showpoint);
     
-    if (argc < 2) {
+    if (argc < 2)
+    {
         std::cout << "You must provide a file name." << std::endl;
         return 1;
     }
 
-    if (strcmp(strrchr(argv[1], '.'), ".lp") == 0) {
-        file_format = LP_FILE;
+    simplex::FileFormat file_format;
+
+    if (strcmp(strrchr(argv[1], '.'), ".lp") == 0) 
+    {
+        file_format = simplex::FileFormat::LP_FILE;
     }
-    else if (strcmp(strrchr(argv[1], '.'), ".mps") == 0) {
-        file_format = MPS_FILE;
+    else if (strcmp(strrchr(argv[1], '.'), ".mps") == 0) 
+    {
+        file_format = simplex::FileFormat::MPS_FILE;
     }
-    else {
+    else 
+    {
         std::cout << "Unrecognized file extension (must be one of: .lp, .mps)." << std::endl;
         return 1;
     }
@@ -36,15 +42,15 @@ int main(int argc, char ** argv)
     std::ifstream fin;
     fin.open(argv[1]);
     
-    if (!fin) {
+    if (!fin) 
+    {
         std::cout << "Invalid input file name." << std::endl;
         return 1;
     }
 
-
     // Read whole input file instead of separate lines
     fin.seekg(0, std::ios::end);
-    size_t size = fin.tellg();
+    const size_t size = fin.tellg();
     std::string buffer(size, ' ');
     fin.seekg(0);
     fin.read(&buffer[0], size);
@@ -56,39 +62,20 @@ int main(int argc, char ** argv)
 
     std::cout << "Reading file done.\n" << std::endl;
 
-    LinearProgram lp;
-    Presolve presolve(lp);
+    simplex::LinearProgram lp;
+    simplex::Presolve presolve(lp);
 
-    // Code used to feed old hand-written parsers (non-Spirit)
-    // string line;
-    // while (fin) {        
-    //     getline(fin, line);
-    //     line += "\n";
-        
-    //     if (file_format == LP_FILE) {            
-    //         if (parse_input_line_lp(line.c_str(), &lp) != 0) {
-    //             fin.close();
-    //             std::cout << "Aborting." << std::endl;
-    //             return 1;
-    //         }
-    //     }
-    //     else if (file_format == MPS_FILE) {
-    //         if (parse_input_line_mps(line.c_str(), &lp) != 0) {
-    //             fin.close();
-    //             std::cout << "Aborting." << std::endl;
-    //             return 1;
-    //         }
-    //     }
-    // }
-
-    try {
-        if (run_parser_lp(buffer, lp)) {
+    try 
+    {
+        if (simplex::run_parser_lp(buffer, lp))
+        {
             presolve.run();
             lp.solve();
             lp.write("sol_test.xml");
         }
     }
-    catch (const std::string& msg) {
+    catch (const std::string & msg) 
+    {
         std::cout << "Exception: " << msg << std::endl;
     }
     

@@ -3,14 +3,27 @@
 
 #include <sstream>
 
-#define _abs(x) ((x) < 0.0 ? -(x) : (x))
-#define _isfloatzero(x) (_abs(x) < 1e-9 ? true : false)
-
-template<typename T> std::string tostr(T i)
+namespace utils
 {
-    std::stringstream ss;
-    ss << i;
-    return ss.str();
+    template <class T>
+    T abs(T x)
+    {
+        return ((x) < 0.0 ? -(x) : (x));
+    }
+
+    template <class T>
+    bool isfloatzero(T x)
+    {
+        return abs(x) < 1e-9 ? true : false;
+    }
+
+    template <class T>
+    std::string tostr(T i)
+    {
+        std::stringstream ss;
+        ss << i;
+        return ss.str();
+    }
 }
 
 #endif 

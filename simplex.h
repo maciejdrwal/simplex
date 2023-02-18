@@ -19,9 +19,43 @@ namespace simplex
     {
         char type;
         double rhs;
-        std::map<std::string, double> name_coeff; // variable name and its coefficient a_{ij}
+        std::map<std::string, double> name_to_coeff; // variable names and coefficients a_{ij}
 
         Constraint(char _type = '<', double _rhs = 0.0) : type(_type), rhs(_rhs) {}
+
+        void add_term(const std::string & name, double a)
+        {
+            auto it = name_to_coeff.find(name);
+            if (it == name_to_coeff.end())
+            {
+                name_to_coeff[name] = a;    // add new term
+            }
+            else
+            {
+                it->second += a;    // add to existing term
+            }
+        }
+
+        bool has_variable(const std::string & name) const
+        {
+            return name_to_coeff.find(name) != name_to_coeff.end();
+        }
+
+        std::optional<double> get_coefficient(const std::string & name) const
+        {
+            auto it = name_to_coeff.find(name);
+            if (it == name_to_coeff.end()) return std::nullopt;
+            return { it->second };
+        }
+
+        void remove_term(const std::string & name)
+        {
+            auto it = name_to_coeff.find(name);
+            if (it != name_to_coeff.end())
+            {
+                name_to_coeff.erase(it);
+            }
+        }
     };
 
     //

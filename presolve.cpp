@@ -79,11 +79,12 @@ namespace simplex
                 auto & data = constraint.second;
                 char _type = data.type;
                 double _rhs = data.rhs;
-                const auto term_it = data.name_coeff.find(var_name);
-                if (term_it != data.name_coeff.end())
+
+                const auto a = data.get_coefficient(var_name);
+                if (a.has_value())
                 {
                     LOG(debug) << "Presolve: applying shift " << old_lb << " to constraint " << constraint.first << " variable " << var_name;
-                    data.rhs -= (old_lb * term_it->second);
+                    data.rhs -= (old_lb * a.value());
                 }
             }
         }
@@ -96,7 +97,7 @@ namespace simplex
             const auto & data = constraint.second;
             double U = 0.0;
             double L = 0.0;
-            for (const auto & [var_name, a] : data.name_coeff)
+            for (const auto & [var_name, a] : data.name_to_coeff)
             {
                 // coefficient a_ij * x_i
                 double ub = m_lp.var_ubnd[var_name];

@@ -97,9 +97,9 @@ namespace simplex
         int next_id = 0;
         int j = 0;
 
-        for (const auto & constraint : constraints)
+        for (const auto & [_, constraint] : constraints)
         {
-            for (const auto & [name, coeff] : constraint.second.name_coeff)
+            for (const auto & [name, a] : constraint.name_to_coeff)
             {
                 if (variable_name_to_id.count(name) == 0)
                 {
@@ -109,9 +109,9 @@ namespace simplex
                 }
 
                 int i = variable_name_to_id[name] * M + j;
-                matrix_A[i] = coeff;
+                matrix_A[i] = a;
             }
-            vector_b[j++] = constraint.second.rhs;
+            vector_b[j++] = constraint.rhs;
         }
 
         objective_value = 0.0;
@@ -156,20 +156,20 @@ namespace simplex
 
         // Add slack variables to inequality constraints, replacing them with equality.
         int num_of_slack_vars = 0;
-        for (auto & constraint : constraints)
+        for (auto & [_, constraint] : constraints)
         {
-            if (constraint.second.type != '=')
+            if (constraint.type != '=')
             {
                 const std::string var_name("__SLACK" + utils::tostr<int>(num_of_slack_vars++));
-                if (constraint.second.type == '<')
+                if (constraint.type == '<')
                 {
-                    constraint.second.name_coeff[var_name] = 1.0;
+                    constraint.add_term(var_name, 1.0);
                 }
-                if (constraint.second.type == '>')
+                if (constraint.type == '>')
                 {
-                    constraint.second.name_coeff[var_name] = -1.0;
+                    constraint.add_term(var_name, -1.0);
                 }
-                constraint.second.type = '=';
+                constraint.type = '=';
                 add_variable(var_name);
 
                 // If all constraints were inequalities then use slacks for initial basis.
@@ -189,24 +189,25 @@ namespace simplex
             // Construct artificial variables for Phase I.
             int art_var_id = 0;
             LOG(debug) << "Not all constrains are inequalities A <= b, adding artificial variables.";
-            for (auto & constraint : constraints)
+            for (auto & [_, constraint] : constraints)
             {
-                if (constraint.second.rhs < 0.0)
+                // Note: at this point there should be no inequality constraints
+                if (constraint.type == '<' || constraint.type == '>')
                 {
-                    constraint.second.rhs *= -1.0;
+                    throw "All constraints must be equality at this point.";
+                }
 
-                    for (auto & jt : constraint.second.name_coeff)
+                if (constraint.rhs < 0.0)
+                {
+                    constraint.rhs *= -1.0;
+
+                    for (auto & [_, a]: constraint.name_to_coeff)
                     {
-                        jt.second = -jt.second;
-                    }
-                    // Note: at this point there should be no inequality constraints
-                    if (constraint.second.type == '<' || constraint.second.type == '>')
-                    {
-                        throw "All constraints must be equality at this point.";
+                        a *= -1;
                     }
                 }
                 const std::string var_name("__ARTIFICIAL" + utils::tostr<int>(art_var_id++));
-                constraint.second.name_coeff[var_name] = 1.0;
+                constraint.add_term(var_name, 1.0);
                 add_variable(var_name);
                 init_basis.insert(var_name);
                 LOG(debug) << "added artificial variable: " << var_name;
@@ -227,7 +228,7 @@ namespace simplex
 
             // Remove artificial variables.
             int i = 0;
-            for (auto & constraint : constraints)
+            for (auto & [_, constraint] : constraints)
             {
                 const auto var_name = std::string("__ARTIFICIAL") + utils::tostr<int>(i++);
                 int var_id = variable_name_to_id[var_name];
@@ -251,7 +252,7 @@ namespace simplex
                     throw msg.str().c_str();
                 }
 
-                constraint.second.name_coeff.erase(var_name);
+                constraint.remove_term(var_name);
                 variable_name_to_id.erase(var_name);
                 variable_id_to_name.erase(var_id);
                 remove_variable(var_name);

@@ -94,10 +94,11 @@ namespace simplex
 
             auto var_name = _attr(ctx);
 
-            if (_val(ctx).lp.constraints[constr_label].name_coeff.count(var_name) != 0)
-            {
-                throw(std::string("Parser: variable already defined in constraint") + constr_label).c_str();
-            }
+            // NOTE: it should be possible to accumulate the repeated variable's coefficients
+            // if (_val(ctx).lp.constraints[constr_label].has_variable(var_name))
+            // {
+            //     throw(std::string("Parser: variable already defined in constraint") + constr_label).c_str();
+            // }
 
             if (!_val(ctx).lp.has_variable(var_name))
             {
@@ -107,7 +108,7 @@ namespace simplex
 
             auto coeff = _val(ctx).var_coeff_cache;
             auto sign = _val(ctx).sign_cache;
-            _val(ctx).lp.constraints[constr_label].name_coeff[var_name] = sign * coeff;
+            _val(ctx).lp.constraints[constr_label].add_term(var_name, sign * coeff);
         };
 
         auto add_constr_type = [](auto &ctx)
@@ -132,7 +133,9 @@ namespace simplex
             auto var_name = _attr(ctx);
             _val(ctx).label_cache = var_name; // store var_name, in case we need to add UB
             if (utils::isfloatzero(lb))
+            {
                 return;
+            }
             _val(ctx).lp.var_lbnd[var_name] = lb;
         };
         auto add_ub_constr = [](auto &ctx)

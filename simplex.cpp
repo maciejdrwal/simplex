@@ -12,7 +12,6 @@
 #include <chrono>
 #include <csignal>
 #include <fstream>
-#include <iostream>
 #include <sstream>
 
 #ifdef __APPLE__
@@ -92,6 +91,14 @@ namespace simplex
     // other problem transformations.
     void LinearProgram::initialize_tableau()
     {
+        vector_b = std::make_unique<double[]>(M);
+        vector_c = std::make_unique<double[]>(N + 2 * M);
+        matrix_A = std::make_unique<double[]>(N * (N + 2 * M));
+
+        std::fill_n(vector_b.get(), M, 0.0);
+        std::fill_n(vector_c.get(), N + 2 * M, 0.0);
+        std::fill_n(matrix_A.get(), N * (N + 2 * M), 0.0);
+
         variable_id_to_name.clear();
         variable_name_to_id.clear();
         int next_id = 0;
@@ -143,14 +150,6 @@ namespace simplex
 
         LOG(debug) << "problem size: N=" << N << ", M=" << M;
         LOG(debug) << "Allocating memory...";
-
-        vector_b = std::make_unique<double[]>(M);
-        vector_c = std::make_unique<double[]>(N + 2 * M);
-        matrix_A = std::make_unique<double[]>(N * (N + 2 * M));
-
-        std::fill_n(vector_b.get(), M, 0.0);
-        std::fill_n(vector_c.get(), N + 2 * M, 0.0);
-        std::fill_n(matrix_A.get(), N * (N + 2 * M), 0.0);
 
         std::set<std::string> init_basis; // Initial basis.
 
@@ -294,7 +293,6 @@ namespace simplex
         print_elapsed_time();
 
         delete ipiv;
-        ipiv = NULL;
     }
 
     // This functions solves a system of linear equations of the form:
@@ -542,12 +540,12 @@ namespace simplex
     // arg_basis : on input: initial basis; on result: final basis
     int LinearProgram::simplex(std::set<std::string> & arg_basis)
     {
-        double * matrix_A_B = new double[M * M];
-        double * matrix_A_N = new double[M * (N - M)];
-        double * vector_c_B = new double[M];
-        double * vector_c_N = new double[N - M];
-        double * vector_bx = new double[M];
-        double * vector_cy = new double[N];
+        auto matrix_A_B = std::make_unique<double[]>(M * M);
+        auto matrix_A_N = std::make_unique<double[]>(M * (N - M));
+        auto vector_c_B = std::make_unique<double[]>(M);
+        auto vector_c_N = std::make_unique<double[]>(N - M);
+        auto vector_bx = std::make_unique<double[]>(M);
+        auto vector_cy = std::make_unique<double[]>(N);
 
         basis.clear();
         non_basis.clear();
@@ -581,48 +579,48 @@ namespace simplex
             int jB = 0, jN = 0;
             for (auto it = basis.begin(); it != basis.end(); ++it)
             {
-                std::copy_n(&matrix_A[(*it) * M], M, matrix_A_B + jB * M);
+                std::copy_n(&matrix_A[(*it) * M], M, matrix_A_B.get() + jB * M);
                 vector_c_B[jB] = vector_c[*it];
                 jB++;
             }
             for (auto it = non_basis.begin(); it != non_basis.end(); ++it)
             {
-                std::copy_n(&matrix_A[(*it) * M], M, matrix_A_N + jN * M);
+                std::copy_n(&matrix_A[(*it) * M], M, matrix_A_N.get() + jN * M);
                 vector_c_N[jN] = vector_c[*it];
                 jN++;
             }
 
-            LOG(debug) << "A_B=\n" << print_matrix(matrix_A_B, M, M);
-            LOG(debug) << "A_N=\n" << print_matrix(matrix_A_N, M, N - M);
-            LOG(debug) << "c_B=\n" << print_vector<double>(vector_c_B, M);
-            LOG(debug) << "c_N=\n" << print_vector<double>(vector_c_N, N - M);
+            LOG(debug) << "A_B=\n" << print_matrix(matrix_A_B.get(), M, M);
+            LOG(debug) << "A_N=\n" << print_matrix(matrix_A_N.get(), M, N - M);
+            LOG(debug) << "c_B=\n" << print_vector<double>(vector_c_B.get(), M);
+            LOG(debug) << "c_N=\n" << print_vector<double>(vector_c_N.get(), N - M);
 
             // Compute x = A_B^{-1} * b and y = (A_B^T)^{-1} * c_B
-            std::copy_n(vector_b.get(), M, vector_bx);
-            std::copy_n(vector_c_B, M, vector_cy);
-            lineq_solve(matrix_A_B, vector_bx, vector_cy);
+            std::copy_n(vector_b.get(), M, vector_bx.get());
+            std::copy_n(vector_c_B.get(), M, vector_cy.get());
+            lineq_solve(matrix_A_B.get(), vector_bx.get(), vector_cy.get());
 
-            LOG(debug) << "solved x=\n" << print_vector<double>(vector_bx, M);
-            LOG(debug) << "solved y=\n" << print_vector<double>(vector_cy, M);
+            LOG(debug) << "solved x=\n" << print_vector<double>(vector_bx.get(), M);
+            LOG(debug) << "solved y=\n" << print_vector<double>(vector_cy.get(), M);
 
             // Pricing (reduced costs): s = c_N - (A_N)^T * y
             // Multiply matrix by vector: y = alpha * A * x + beta * y.
             // Arguments: storage order, transpose, num. of rows, num. of cols., alpha, matrix A, l.d.a. of A, vect. x, incx, beta, y, incy.
             // NOTE 1: the first argument "storage order" is not in the original CBLAS specification
             // NOTE 2: the second argument should be 'T' according to the original CBLAS specification
-            cblas_dgemv(CblasColMajor, CblasTrans, M, N - M, -1.0, matrix_A_N, M, vector_cy, 1, 1.0, vector_c_N, 1);
+            cblas_dgemv(CblasColMajor, CblasTrans, M, N - M, -1.0, matrix_A_N.get(), M, vector_cy.get(), 1, 1.0, vector_c_N.get(), 1);
 
             // Now vector_c_N contains the result s.
 
-            LOG(debug) << "reduced costs s=\n" << print_vector<double>(vector_c_N, N - M);
+            LOG(debug) << "reduced costs s=\n" << print_vector<double>(vector_c_N.get(), N - M);
 
             // 1) Select the entering variable.
-            int entering_index = select_entering_variable_Bland(vector_c_N);
+            int entering_index = select_entering_variable_Bland(vector_c_N.get());
             // int entering_index = select_entering_variable_most_neg(vector_c_N);
 
             if (entering_index == -1)
             {
-                solution_found(vector_bx, vector_cy, vector_c_B);
+                solution_found(vector_bx.get(), vector_cy.get(), vector_c_B.get());
                 arg_basis.clear();
                 for (int i = 0; i < M; i++)
                 {
@@ -632,11 +630,11 @@ namespace simplex
             }
 
             // Copy the entering column A_q into vector_cy.
-            std::copy_n(&matrix_A[non_basis[entering_index] * M], M, vector_cy);
+            std::copy_n(&matrix_A[non_basis[entering_index] * M], M, vector_cy.get());
 
             // 2) Select the leaving variable.
             // int leaving_index = select_leaving_variable_Bland(vector_bx, vector_cy, matrix_A_B);
-            int leaving_index = select_leaving_variable_SUB(vector_bx, vector_cy, matrix_A_B, entering_index);
+            int leaving_index = select_leaving_variable_SUB(vector_bx.get(), vector_cy.get(), matrix_A_B.get(), entering_index);
 
             if (leaving_index == -1)
             {
@@ -657,13 +655,6 @@ namespace simplex
         {
             throw "MAXIMUM NUMBER OF SIMPLEX ITERATIONS REACHED";
         }
-
-        delete[] matrix_A_B;
-        delete[] matrix_A_N;
-        delete[] vector_c_B;
-        delete[] vector_c_N;
-        delete[] vector_bx;
-        delete[] vector_cy;
 
         return 0;
     }

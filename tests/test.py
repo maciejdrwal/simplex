@@ -26,6 +26,7 @@ def test_compare_with_cplex():
     failure_count = 0
     test_cases = []
     for filename in get_files_from_dir(DATA_DIR, ext = ".lp"):
+        print(">>> ", filename)
         call_list = [EXEC_PATH, filename]
         subprocess.call(call_list)
         sol_path = os.path.join(SCRIPT_PATH, "sol_test.xml")

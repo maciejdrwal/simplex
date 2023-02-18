@@ -4,7 +4,7 @@ from sys import argv
 n = int(argv[1])
 rhs = 5
 
-with open("./data/klee-minty-n" + str(n) + ".lp", "w") as f:
+with open("./klee-minty-n" + str(n) + ".lp", "w") as f:
     print("Maximize", end='\n', file=f)
     for i in range(1,n+1):
         print(str(2**(n-i)) + "x" + str(i) + ("+" if i < n else ""), end='', file=f)

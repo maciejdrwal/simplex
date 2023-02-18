@@ -664,6 +664,7 @@ namespace simplex
         std::ofstream outfile;
         outfile.open(filename);
 
+        outfile << std::fixed;
         outfile << "<?xml version = \"1.0\" encoding=\"UTF-8\" standalone=\"yes\"?>" << '\n';
         outfile << "<TestSolution>\n<header objectiveValue=\"" << objective_value << "\"/>" << '\n';
 

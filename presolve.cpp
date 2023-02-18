@@ -35,8 +35,11 @@ namespace simplex
     // x' >= 0
     void Presolve::eliminate_lbs()
     {
-        for (auto & [var_name, lb] : m_lp.var_lbnd)
+        for (auto & [var_name, lb_ref] : m_lp.var_lbnd)
         {
+            double lb = lb_ref;
+            if (utils::isfloatzero(lb)) continue;
+
             auto ub_it = m_lp.var_ubnd.find(var_name);
             if (ub_it != m_lp.var_ubnd.end())
             {
@@ -59,32 +62,25 @@ namespace simplex
                 }
             }
 
-            if (utils::isfloatzero(lb)) continue;
-
-            double old_lb = lb;
             m_lp.var_shifts[var_name] = lb;
-            lb = 0.0;
+            lb_ref = 0.0;
 
             // Update objective function
             auto obj_fun_it = m_lp.objective_name_coeff.find(var_name);
             if (obj_fun_it != m_lp.objective_name_coeff.end())
             {
-                LOG(debug) << "Presolve: applying shift " << old_lb << " to obj.fun. variable:" << var_name;
-                m_lp.obj_value_shift += (obj_fun_it->second * old_lb);
+                LOG(debug) << "Presolve: applying shift " << lb << " to obj.fun. variable:" << var_name;
+                m_lp.obj_value_shift += (obj_fun_it->second * lb);
             }
 
             // Update constraints
-            for (auto & constraint : m_lp.constraints)
+            for (auto & [constr_name, constraint] : m_lp.constraints)
             {
-                auto & data = constraint.second;
-                char _type = data.type;
-                double _rhs = data.rhs;
-
-                const auto a = data.get_coefficient(var_name);
+                const auto a = constraint.get_coefficient(var_name);
                 if (a.has_value())
                 {
-                    LOG(debug) << "Presolve: applying shift " << old_lb << " to constraint " << constraint.first << " variable " << var_name;
-                    data.rhs -= (old_lb * a.value());
+                    LOG(debug) << "Presolve: applying shift " << lb << " to constraint " << constr_name << " variable " << var_name;
+                    constraint.rhs -= (lb * a.value());
                 }
             }
         }

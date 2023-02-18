@@ -11,12 +11,7 @@
 #include "presolve.h"
 #include "simplex.h"
 #include "utils.h"
-
-// using std::string;
-// using std::map;
-// using std::shared_ptr;
-// using std::cout;
-// using std::endl;
+#include "logger.h"
 
 namespace simplex
 {
@@ -49,7 +44,7 @@ namespace simplex
 
                 if (lb > ub)
                 {
-                    std::cout << "Presolve: problem infeasible, lb>ub for variable: " << var_name << std::endl;
+                    LOG(debug) << "Presolve: problem infeasible, lb>ub for variable: " << var_name;
                     std::exit(0);
                 }
                 else if (utils::isfloatzero(utils::abs(ub - lb)))
@@ -66,6 +61,7 @@ namespace simplex
 
             if (utils::isfloatzero(lb)) continue;
 
+            double old_lb = lb;
             m_lp.var_shifts[var_name] = lb;
             lb = 0.0;
 
@@ -73,8 +69,8 @@ namespace simplex
             auto obj_fun_it = m_lp.objective_name_coeff.find(var_name);
             if (obj_fun_it != m_lp.objective_name_coeff.end())
             {
-                std::cout << "Presolve: applying shift " << lb << " to obj.fun. variable:" << var_name << std::endl;
-                m_lp.obj_value_shift += (obj_fun_it->second * lb);
+                LOG(debug) << "Presolve: applying shift " << old_lb << " to obj.fun. variable:" << var_name;
+                m_lp.obj_value_shift += (obj_fun_it->second * old_lb);
             }
 
             // Update constraints
@@ -86,8 +82,8 @@ namespace simplex
                 const auto term_it = data.name_coeff.find(var_name);
                 if (term_it != data.name_coeff.end())
                 {
-                    std::cout << "Presolve: applying shift " << lb << " to constraint " << constraint.first << " variable " << var_name << std::endl;
-                    data.rhs -= (lb * term_it->second);
+                    LOG(debug) << "Presolve: applying shift " << old_lb << " to constraint " << constraint.first << " variable " << var_name;
+                    data.rhs -= (old_lb * term_it->second);
                 }
             }
         }
@@ -116,16 +112,16 @@ namespace simplex
                     L += a * ub;
                 }
             }
-            std::cout << "apply_reductions: constr:" << constraint.first << " L= " << L << " U=" << U << std::endl;
+            LOG(debug) << "apply_reductions: constr:" << constraint.first << " L=" << L << " U=" << U;
             if ((data.type == '<' && U <= data.rhs) ||
                 (data.type == '>' && L >= data.rhs))
             {
-                std::cout << "  constraint is redundant" << std::endl;
+                LOG(debug) << "  constraint is redundant";
             }
             if (((data.type == '<' || data.type == '=') && L > data.rhs) ||
                 ((data.type == '>' || data.type == '=') && U < data.rhs))
             {
-                std::cout << "  no feasible sol." << std::endl;
+                LOG(debug) << "  no feasible sol.";
             }
         }
     }

@@ -60,7 +60,7 @@ int main(int argc, char ** argv)
     //std::stringstream buffer;
     //buffer << fin.rdbuf();
 
-    std::cout << "Reading file done.\n" << std::endl;
+    std::cout << "Reading file done.\n";
 
     simplex::LinearProgram lp;
     simplex::Presolve presolve(lp);
@@ -72,6 +72,10 @@ int main(int argc, char ** argv)
             presolve.run();
             lp.solve();
             lp.write("sol_test.xml");
+        }
+        else
+        {
+            std::cout << "Parser failed.\n";
         }
     }
     catch (const std::string & msg) 

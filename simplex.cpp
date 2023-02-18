@@ -4,6 +4,7 @@
 // versions of this file, provided that the copyright notice and this permission
 // notice are preserved on all copies and modified versions of this file.
 // 
+
 #include "simplex.h"
 #include "utils.h"
 #include "logger.h"
@@ -58,7 +59,7 @@ namespace simplex
         LOG(debug) << ss.str();
     }
 
-    void print_matrix(double * matrix, int n_rows, int m_cols)
+    std::string print_matrix(double * matrix, int n_rows, int m_cols)
     {
         std::stringstream ss;
         for (int i = 0; i < n_rows; i++)
@@ -68,12 +69,12 @@ namespace simplex
                 ss << std::scientific << matrix[j * n_rows + i] << '\t';
             }
             ss << std::fixed << '\n';
-            LOG(debug) << ss.str();
         }
+        return ss.str();
     }
 
     template <typename T>
-    void print_vector(T * vect, int n)
+    std::string print_vector(T * vect, int n)
     {
         std::stringstream ss;
         for (int i = 0; i < n; i++)
@@ -81,7 +82,7 @@ namespace simplex
             ss << std::scientific << vect[i] << '\t';
         }
         ss << std::fixed << '\n';
-        LOG(debug) << ss.str();
+        return ss.str();
     }
 
     // Copies the data read by parser into internal data structures: A, b.
@@ -128,7 +129,7 @@ namespace simplex
                   << static_cast<long>(std::chrono::duration_cast<std::chrono::seconds>(t_end - t_start).count()) << " s ("
                   << static_cast<long>(std::chrono::duration_cast<std::chrono::milliseconds>(t_end - t_start).count()) << " ms, "
                   << static_cast<long>(std::chrono::duration_cast<std::chrono::microseconds>(t_end - t_start).count()) << " us, "
-                  << static_cast<long>(std::chrono::duration_cast<std::chrono::nanoseconds>(t_end - t_start).count()) << " ns)\n";
+                  << static_cast<long>(std::chrono::duration_cast<std::chrono::nanoseconds>(t_end - t_start).count()) << " ns)";
     }
 
     // The main procedure of the solver.
@@ -140,7 +141,7 @@ namespace simplex
         M = constraints.size();
         N = var_lbnd.size();
 
-        LOG(debug) << "problem size:\nN=" << N << ", M=" << M;
+        LOG(debug) << "problem size: N=" << N << ", M=" << M;
         LOG(debug) << "Allocating memory...";
 
         vector_b = std::make_unique<double[]>(M);
@@ -364,9 +365,6 @@ namespace simplex
         // Solve: A_B * d = A(entering_index). Note that matrix_A_B already contains LU factors.
         lineq_solve(matrix_A_B, vector_cy, nullptr, false);
 
-        // cout << "solved d=\n";
-        // print_vector<double>(vector_cy, M);
-
         int min_i = -1;
         double min_lbd = std::numeric_limits<double>::max();
         for (int i = 0; i < M; i++)
@@ -573,8 +571,7 @@ namespace simplex
         {
             iteration_count++;
             LOG(debug) << "SIMPLEX iteration: " << iteration_count;
-            LOG(debug) << "Basis: ";
-            print_vector<int>(basis.data(), basis.size());
+            LOG(debug) << "Basis:\n" << print_vector<int>(basis.data(), basis.size());
 
             // Split the matrix A into basis matrix (A_B) and non-basis matrix (A_N).
             // TODO: no need to copy whole vectors, as only 1 element has changed in basis.
@@ -594,24 +591,18 @@ namespace simplex
                 jN++;
             }
 
-            LOG(debug) << "A_B=\n";
-            print_matrix(matrix_A_B, M, M);
-            LOG(debug) << "A_N=\n";
-            print_matrix(matrix_A_N, M, N - M);
-            LOG(debug) << "c_B=\n";
-            print_vector<double>(vector_c_B, M);
-            LOG(debug) << "c_N=\n";
-            print_vector<double>(vector_c_N, N - M);
+            LOG(debug) << "A_B=\n" << print_matrix(matrix_A_B, M, M);
+            LOG(debug) << "A_N=\n" << print_matrix(matrix_A_N, M, N - M);
+            LOG(debug) << "c_B=\n" << print_vector<double>(vector_c_B, M);
+            LOG(debug) << "c_N=\n" << print_vector<double>(vector_c_N, N - M);
 
             // Compute x = A_B^{-1} * b and y = (A_B^T)^{-1} * c_B
             std::copy_n(vector_b.get(), M, vector_bx);
             std::copy_n(vector_c_B, M, vector_cy);
             lineq_solve(matrix_A_B, vector_bx, vector_cy);
 
-            LOG(debug) << "solved x=\n";
-            print_vector<double>(vector_bx, M);
-            LOG(debug) << "solved y=\n";
-            print_vector<double>(vector_cy, M);
+            LOG(debug) << "solved x=\n" << print_vector<double>(vector_bx, M);
+            LOG(debug) << "solved y=\n" << print_vector<double>(vector_cy, M);
 
             // Pricing (reduced costs): s = c_N - (A_N)^T * y
             // Multiply matrix by vector: y = alpha * A * x + beta * y.
@@ -622,8 +613,7 @@ namespace simplex
 
             // Now vector_c_N contains the result s.
 
-            LOG(debug) << "reduced costs s=\n";
-            print_vector<double>(vector_c_N, N - M);
+            LOG(debug) << "reduced costs s=\n" << print_vector<double>(vector_c_N, N - M);
 
             // 1) Select the entering variable.
             int entering_index = select_entering_variable_Bland(vector_c_N);

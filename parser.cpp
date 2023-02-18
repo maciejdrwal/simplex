@@ -5,8 +5,6 @@
 // notice are preserved on all copies and modified versions of this file.
 // 
 
-#include <iostream>
-
 #include <boost/spirit/home/x3.hpp>
 
 #include "parser.h"
@@ -157,9 +155,6 @@ namespace simplex
             _val(ctx).lp.var_ubnd[var_name] = ub;
         };
 
-        auto print_attr = [](auto &ctx)
-        { std::cout << _attr(ctx) << std::endl; };
-
         // Grammar rules definitions
         // TODO: handle properly the constant objective function, e.g., obj: 0
 
@@ -235,12 +230,10 @@ namespace simplex
 
         if (result && iter == end)
         {
-            std::cout << "Parser success." << std::endl;
             return true;
         }
         else
         {
-            std::cout << "Parser failed." << std::endl;
             return false;
         }
     }

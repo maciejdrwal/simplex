@@ -36,6 +36,16 @@ namespace utils
             return *this;
         }
 
+        std::ofstream & operator<<(const std::string & msg)
+        {
+            m_fout << "\n" << get_tags() << msg;
+            if (m_autoflush)
+            {
+                m_fout << std::flush;
+            }
+            return m_fout;
+        }
+
 private:
         
         Logger() 
@@ -62,18 +72,6 @@ private:
             ss << '[' << std::put_time(std::localtime(&t), "%F %T%z") << "][" << get_severity() << "] ";
             return ss.str();
         }
-
-        std::ofstream & operator<<(const std::string & msg)
-        {
-            m_fout << "\n" << get_tags() << msg;
-            if (m_autoflush)
-            {
-                m_fout << std::flush;
-            }
-            return m_fout;
-        }
-
-    private:
 
         std::string m_filename = "default.log";
         std::ofstream m_fout;

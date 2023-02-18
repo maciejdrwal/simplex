@@ -4,6 +4,9 @@
 // versions of this file, provided that the copyright notice and this permission
 // notice are preserved on all copies and modified versions of this file.
 // 
+#include "simplex.h"
+#include "utils.h"
+#include "logger.h"
 
 #include <chrono>
 #include <csignal>
@@ -20,20 +23,8 @@
 #include <f77blas.h>
 #endif
 
-#include "simplex.h"
-#include "utils.h"
-
-// using std::cout;
-// using std::endl;
-// using std::map;
-// using std::vector;
-// using std::string;
-// using std::set;
-// using std::shared_ptr;
-// using std::unique_ptr;
-
 namespace simplex
-{
+{    
     int * LinearProgram::ipiv = NULL;
 
     std::chrono::time_point<std::chrono::steady_clock> t_start;
@@ -64,29 +55,33 @@ namespace simplex
             ss << vector_c[i] << '\t';
         }
         ss << '\n';
-        std::cout << ss.str();
+        LOG(debug) << ss.str();
     }
 
     void print_matrix(double * matrix, int n_rows, int m_cols)
     {
+        std::stringstream ss;
         for (int i = 0; i < n_rows; i++)
         {
             for (int j = 0; j < m_cols; j++)
             {
-                std::cout << std::scientific << matrix[j * n_rows + i] << '\t';
+                ss << std::scientific << matrix[j * n_rows + i] << '\t';
             }
-            std::cout << std::fixed << '\n';
+            ss << std::fixed << '\n';
+            LOG(debug) << ss.str();
         }
     }
 
     template <typename T>
     void print_vector(T * vect, int n)
     {
+        std::stringstream ss;
         for (int i = 0; i < n; i++)
         {
-            std::cout << std::scientific << vect[i] << '\t';
+            ss << std::scientific << vect[i] << '\t';
         }
-        std::cout << std::fixed << '\n';
+        ss << std::fixed << '\n';
+        LOG(debug) << ss.str();
     }
 
     // Copies the data read by parser into internal data structures: A, b.
@@ -129,11 +124,11 @@ namespace simplex
     inline void print_elapsed_time()
     {
         auto t_end = std::chrono::steady_clock::now();
-        printf("Elapsed time: %lld s (%lld ms, %lld us, %lld ns)\n",
-               std::chrono::duration_cast<std::chrono::seconds>(t_end - t_start).count(),
-               std::chrono::duration_cast<std::chrono::milliseconds>(t_end - t_start).count(),
-               std::chrono::duration_cast<std::chrono::microseconds>(t_end - t_start).count(),
-               std::chrono::duration_cast<std::chrono::nanoseconds>(t_end - t_start).count());
+        LOG(debug) << "Elapsed time: "
+                  << static_cast<long>(std::chrono::duration_cast<std::chrono::seconds>(t_end - t_start).count()) << " s ("
+                  << static_cast<long>(std::chrono::duration_cast<std::chrono::milliseconds>(t_end - t_start).count()) << " ms, "
+                  << static_cast<long>(std::chrono::duration_cast<std::chrono::microseconds>(t_end - t_start).count()) << " us, "
+                  << static_cast<long>(std::chrono::duration_cast<std::chrono::nanoseconds>(t_end - t_start).count()) << " ns)\n";
     }
 
     // The main procedure of the solver.
@@ -145,8 +140,8 @@ namespace simplex
         M = constraints.size();
         N = var_lbnd.size();
 
-        std::cout << "problem size:\nN=" << N << ", M=" << M << '\n';
-        std::cout << "Allocating memory..." << '\n';
+        LOG(debug) << "problem size:\nN=" << N << ", M=" << M;
+        LOG(debug) << "Allocating memory...";
 
         vector_b = std::make_unique<double[]>(M);
         vector_c = std::make_unique<double[]>(N + 2 * M);
@@ -164,7 +159,7 @@ namespace simplex
         {
             if (constraint.second.type != '=')
             {
-                std::string var_name("__SLACK" + utils::tostr<int>(num_of_slack_vars++));
+                const std::string var_name("__SLACK" + utils::tostr<int>(num_of_slack_vars++));
                 if (constraint.second.type == '<')
                 {
                     constraint.second.name_coeff[var_name] = 1.0;
@@ -181,7 +176,7 @@ namespace simplex
                 {
                     init_basis.insert(var_name);
                 }
-                std::cout << "added slack variable: " << var_name << '\n';
+                LOG(debug) << "added slack variable: " << var_name;
             }
         }
         int num_of_primal_vars = objective_name_coeff.size();
@@ -192,12 +187,12 @@ namespace simplex
         {
             // Construct artificial variables for Phase I.
             int art_var_id = 0;
-            std::cout << "Not all constrains are inequalities A <= b, adding artificial variables." << '\n';
+            LOG(debug) << "Not all constrains are inequalities A <= b, adding artificial variables.";
             for (auto & constraint : constraints)
             {
                 if (constraint.second.rhs < 0.0)
                 {
-                    constraint.second.rhs *= 1.0;
+                    constraint.second.rhs *= -1.0;
 
                     for (auto & jt : constraint.second.name_coeff)
                     {
@@ -209,21 +204,21 @@ namespace simplex
                         throw "All constraints must be equality at this point.";
                     }
                 }
-                std::string var_name("__ARTIFICIAL" + utils::tostr<int>(art_var_id++));
+                const std::string var_name("__ARTIFICIAL" + utils::tostr<int>(art_var_id++));
                 constraint.second.name_coeff[var_name] = 1.0;
                 add_variable(var_name);
                 init_basis.insert(var_name);
-                std::cout << "added artificial variable: " << var_name << '\n';
+                LOG(debug) << "added artificial variable: " << var_name;
             }
             N = var_lbnd.size(); // this has changed after adding artificial variables
 
             // Solve Phase I LP.
-            std::cout << "*** PHASE I ***" << '\n';
+            LOG(debug) << "*** PHASE I ***";
             initialize_tableau();
             // Objective function: sum of artificial variables.
             for (int i = 0; i < art_var_id; i++)
             {
-                std::string var_name("__ARTIFICIAL" + utils::tostr<int>(i));
+                const std::string var_name("__ARTIFICIAL" + utils::tostr<int>(i));
                 vector_c[variable_name_to_id[var_name]] = 1.0;
             }
             print_tableau();
@@ -259,7 +254,7 @@ namespace simplex
                 variable_name_to_id.erase(var_name);
                 variable_id_to_name.erase(var_id);
                 remove_variable(var_name);
-                std::cout << "removed artificial variable: " << var_name << '\n';
+                LOG(debug) << "removed artificial variable: " << var_name;
             }
             N = var_lbnd.size(); // this has changed after removing artificial variables
 
@@ -270,12 +265,12 @@ namespace simplex
         }
         else
         {
-            std::cout << "Using slacks for initial basis, skipping Phase I." << '\n';
+            LOG(debug) << "Using slacks for initial basis, skipping Phase I.";
         }
 
         if (objective_value > 0.0)
         {
-            std::cout << "LP is infeasible. Aborting." << '\n';
+            LOG(debug) << "LP is infeasible. Aborting.";
         }
         else
         {
@@ -289,7 +284,7 @@ namespace simplex
             }
 
             // Solve Phase II LP.
-            std::cout << "*** PHASE II ***" << '\n';
+            LOG(debug) << "*** PHASE II ***";
             print_tableau();
             simplex(init_basis);
         }
@@ -322,7 +317,7 @@ namespace simplex
             {
                 // info < 0: argument "-info" has illegal value
                 // info > 0: diagonal element at "info" of the factor U from the factorization is exactly 0
-                std::cout << "dgetrf_ failed with error code " << static_cast<int>(info) << std::endl;
+                LOG(debug) << "dgetrf_ failed with error code " << static_cast<int>(info);
                 std::exit(1);
             }
 
@@ -334,7 +329,7 @@ namespace simplex
             if (info != 0)
             {
                 // info < 0: argument "-info" has illegal value
-                std::cout << "dgetrs_ #1 failed with error code " << static_cast<int>(info) << std::endl;
+                LOG(debug) << "dgetrs_ #1 failed with error code " << static_cast<int>(info);
                 std::exit(1);
             }
         }
@@ -345,7 +340,7 @@ namespace simplex
         if (info != 0)
         {
             // info < 0: argument "-info" has illegal value
-            std::cout << "dgetrs_ #2 failed with error code " << static_cast<int>(info) << std::endl;
+            LOG(debug) << "dgetrs_ #2 failed with error code " << static_cast<int>(info);
             std::exit(1);
         }
     }
@@ -492,7 +487,7 @@ namespace simplex
             // Reverse UB-substitution
             if (ub_substitutions[var_id])
             {
-                std::cout << "REVERSING UB-subst of " << var_name << '\n';
+                LOG(debug) << "REVERSING UB-subst of " << var_name;
                 upper_bound_substitution(var_id, var_ubnd[var_name]);
             }
 
@@ -501,12 +496,12 @@ namespace simplex
             {
                 if (variable_name_to_id[kt->first] == var_id)
                 {
-                    std::cout << "SHIFTING: basis var " << var_name << " by " << kt->second << '\n';
+                    LOG(debug) << "SHIFTING: basis var " << var_name << " by " << kt->second;
                     vector_bx[i] += kt->second;
                 }
             }
 
-            std::cout << "var (basis) " << var_name << " = " << vector_bx[i] << std::endl;
+            LOG(debug) << "var (basis) " << var_name << " = " << vector_bx[i];
             solution[var_name] = vector_bx[i];
             cost += vector_c_B[i] * vector_bx[i];
         }
@@ -522,7 +517,7 @@ namespace simplex
                 double ub = var_ubnd[var_name];
                 upper_bound_substitution(var_id, ub);
                 q += ub;
-                std::cout << "REVERSING UB-subst of " << var_name << " ub= " << ub << '\n';
+                LOG(debug) << "REVERSING UB-subst of " << var_name << " ub= " << ub;
             }
 
             // Applying shifts
@@ -530,18 +525,18 @@ namespace simplex
             {
                 if (variable_name_to_id[kt->first] == var_id)
                 {
-                    std::cout << "SHIFTING: non-basis var " << var_name << " by " << kt->second << '\n';
+                    LOG(debug) << "SHIFTING: non-basis var " << var_name << " by " << kt->second;
                     q += kt->second;
                 }
             }
 
-            std::cout << "var (non-basis) " << var_name << " = " << q << '\n';
+            LOG(debug) << "var (non-basis) " << var_name << " = " << q;
             solution[var_name] = q;
             cost += vector_c[non_basis[i]] * q;
         }
         objective_value = (sense == 'm') ? cost : -cost;
 
-        std::cout << "OPTIMAL X FOUND.\nValue = " << objective_value << std::endl;
+        LOG(debug) << "OPTIMAL X FOUND.\nValue = " << objective_value;
     }
 
     // The (Revised) Simplex Algorithm.
@@ -570,15 +565,15 @@ namespace simplex
         }
 
         // Initialize upper-bound substitutions.
-        ub_substitutions = std::vector<bool>(N, false);
+        ub_substitutions.assign(N, false);
 
         unsigned long iteration_count = 0L;
         unsigned long iteration_limit = 1000000000L;
         while (iteration_count < iteration_limit)
         {
             iteration_count++;
-            std::cout << "\nSIMPLEX iteration: " << iteration_count << '\n';
-            std::cout << "Basis: ";
+            LOG(debug) << "SIMPLEX iteration: " << iteration_count;
+            LOG(debug) << "Basis: ";
             print_vector<int>(basis.data(), basis.size());
 
             // Split the matrix A into basis matrix (A_B) and non-basis matrix (A_N).
@@ -599,13 +594,13 @@ namespace simplex
                 jN++;
             }
 
-            std::cout << "A_B=\n";
+            LOG(debug) << "A_B=\n";
             print_matrix(matrix_A_B, M, M);
-            std::cout << "A_N=\n";
+            LOG(debug) << "A_N=\n";
             print_matrix(matrix_A_N, M, N - M);
-            std::cout << "c_B=\n";
+            LOG(debug) << "c_B=\n";
             print_vector<double>(vector_c_B, M);
-            std::cout << "c_N=\n";
+            LOG(debug) << "c_N=\n";
             print_vector<double>(vector_c_N, N - M);
 
             // Compute x = A_B^{-1} * b and y = (A_B^T)^{-1} * c_B
@@ -613,9 +608,9 @@ namespace simplex
             std::copy_n(vector_c_B, M, vector_cy);
             lineq_solve(matrix_A_B, vector_bx, vector_cy);
 
-            std::cout << "solved x=\n";
+            LOG(debug) << "solved x=\n";
             print_vector<double>(vector_bx, M);
-            std::cout << "solved y=\n";
+            LOG(debug) << "solved y=\n";
             print_vector<double>(vector_cy, M);
 
             // Pricing (reduced costs): s = c_N - (A_N)^T * y
@@ -627,7 +622,7 @@ namespace simplex
 
             // Now vector_c_N contains the result s.
 
-            std::cout << "reduced costs s=\n";
+            LOG(debug) << "reduced costs s=\n";
             print_vector<double>(vector_c_N, N - M);
 
             // 1) Select the entering variable.
@@ -654,7 +649,7 @@ namespace simplex
 
             if (leaving_index == -1)
             {
-                std::cout << "LP IS UNBOUNDED.\n";
+                LOG(debug) << "LP IS UNBOUNDED.\n";
                 break;
             }
 
@@ -685,7 +680,7 @@ namespace simplex
     // Write the solution to text file.
     void LinearProgram::write(const std::string & filename) const
     {
-        std::cout << "Writing solution...\n";
+        LOG(debug) << "Writing solution...\n";
 
         std::ofstream outfile;
         outfile.open(filename);

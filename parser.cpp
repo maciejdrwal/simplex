@@ -15,7 +15,7 @@ namespace simplex
 {
     struct ParserState
     {
-        ParserState(LinearProgram &_lp) : lp(_lp), var_coeff_cache(0.0), sign_cache(1.0), label_cache("") {}
+        ParserState(LinearProgram &_lp) : lp(_lp), var_coeff_cache(1.0), sign_cache(1.0), label_cache("") {}
 
         LinearProgram &lp;
         double var_coeff_cache;

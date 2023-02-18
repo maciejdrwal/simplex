@@ -149,7 +149,6 @@ namespace simplex
         N = var_lbnd.size();
 
         LOG(debug) << "problem size: N=" << N << ", M=" << M;
-        LOG(debug) << "Allocating memory...";
 
         std::set<std::string> init_basis; // Initial basis.
 
@@ -291,8 +290,6 @@ namespace simplex
         }
 
         print_elapsed_time();
-
-        delete ipiv;
     }
 
     // This functions solves a system of linear equations of the form:

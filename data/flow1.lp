@@ -1,5 +1,3 @@
-/ This is not solved correctly at the moment...
-
 Maximize
   obj: s
   

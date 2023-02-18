@@ -89,6 +89,11 @@ namespace simplex
         {
         }
 
+        ~LinearProgram() 
+        {
+            delete ipiv;
+        }
+        
         void solve();
         void write(const std::string & filename) const;
 

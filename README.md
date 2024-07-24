@@ -1,38 +1,17 @@
 # simplex
 
-Implementation of LP solver based on simplex algorithm. It supports parsing .lp and .MPS input file formats.
+Implementation of Linear Programming solver based on Simplex algorithm. It supports parsing .lp file format.
 
 ## Compilation
 
-Run `make` command (macOS, Linux). 
+Run `make` command (macOS, Linux).
+
+For Windows there is a Visual Studio project.
 
 ## External dependencies
 
-* BLAS/LAPACK
-* Boost Spirit X3
-
-### BLAS/LAPACK on macOS
-
-It is enough to link to Accelerate Framework.
-
-### BLAS/LAPACK on Linux
-
-On Linux it is recommended to build OpenBLAS from sources.
-
-`git clone https://github.com/xianyi/OpenBLAS.git`
-
-Change into cloned `OpenBLAS`, and run
-
-`make FC=gfortran NO_LAPACK=0`
-
-`make PREFIX=path_to_simplex/extern install`
-
-`export LD_LIBRARY_PATH=$LD_LIBRARY_PATH:path_to_libopenblas`
-
-### Boost Spirit X3
-
-Unzip and put [`boost_1_81_0`](https://www.boost.org/) (or later) into current directory (no build/linking is required for Spirit).
+- [Eigen](http://eigen.tuxfamily.org/) - C++ template library for linear algebra
 
 ## Use
 
-`simplex [LP/MPS filename]`
+`simplex [LP filename]`

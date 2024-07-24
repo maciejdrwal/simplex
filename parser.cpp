@@ -1,206 +1,222 @@
-// Copyright (C) 2019 Maciej Drwal
-// 
-// Permission is granted to copy and distribute verbatim copies and modified
-// versions of this file, provided that the copyright notice and this permission
-// notice are preserved on all copies and modified versions of this file.
-// 
+//// Copyright (C) 2024 Maciej Drwal
+////
+//// Permission is granted to copy and distribute verbatim copies and modified
+//// versions of this file, provided that the copyright notice and this permission
+//// notice are preserved on all copies and modified versions of this file.
+////
 
-#include <boost/spirit/home/x3.hpp>
+#include <algorithm>
+#include <locale>
+#include <string>
 
-#include "parser.h"
-#include "simplex.h"
-#include "utils.h"
+#include "Parser.h"
+#include "Utils.h"
 
-namespace simplex
+namespace
 {
-    struct ParserState
+    std::string to_lower(std::string str)
     {
-        ParserState(LinearProgram &_lp) : lp(_lp), var_coeff_cache(1.0), sign_cache(1.0), label_cache("") {}
-
-        LinearProgram &lp;
-        double var_coeff_cache;
-        double sign_cache;
-        std::string label_cache;
-    };
-
-    namespace x3 = boost::spirit::x3;
-    namespace ascii = boost::spirit::x3::ascii;
-
-    namespace parser
-    {
-        using x3::double_;
-        using x3::eoi;
-        using x3::lexeme;
-        using x3::lit;
-        using x3::no_case;
-        using x3::skip;
-
-        using ascii::alnum;
-        using ascii::alpha;
-        using ascii::char_;
-        using ascii::space;
-
-        // Semantic actions definitions
-        auto set_minimize = [](auto &ctx)
-        { _val(ctx).lp.set_sense('m'); };
-        auto set_maximize = [](auto &ctx)
-        { _val(ctx).lp.set_sense('M'); };
-        auto set_obj_label = [](auto &ctx)
-        { _val(ctx).lp.set_objective_label(_attr(ctx)); };
-        auto add_obj_fun_coeff = [](auto &ctx)
-        { _val(ctx).var_coeff_cache = _attr(ctx); };
-        auto add_obj_fun_var = [](auto &ctx)
-        {
-            // create new variable and store associated obj.fun. coefficient
-            auto var_name = _attr(ctx);
-            if (_val(ctx).lp.has_variable(var_name))
-            {
-                throw "Parser: variable already defined in objective function.";
-            }
-            _val(ctx).lp.add_variable(var_name);
-            _val(ctx).lp.objective_name_coeff[var_name] =
-                _val(ctx).sign_cache * _val(ctx).var_coeff_cache;
-        };
-        auto neg_var_coeff = [](auto &ctx)
-        { _val(ctx).sign_cache = -1; };
-        auto term_parsed = [](auto &ctx)
-        {
-            _val(ctx).sign_cache = 1;
-            _val(ctx).var_coeff_cache = 1;
-        };
-        auto add_obj_fun_const = [](auto &ctx)
-        { _val(ctx).lp.set_obj_value_shift(_attr(ctx)); };
-
-        auto set_constr_label = [](auto &ctx)
-        {
-            // create labeled constraint
-            Constraint constraint;
-            _val(ctx).label_cache = _attr(ctx);
-            _val(ctx).lp.constraints.emplace(_attr(ctx), constraint);
-        };
-        auto add_constr_coeff = [](auto &ctx)
-        { _val(ctx).var_coeff_cache = _attr(ctx); };
-        auto add_constr_var = [](auto &ctx)
-        {
-            auto &constr_label = _val(ctx).label_cache;
-            if (constr_label.empty())
-            {
-                // no label was defined by user; create new constraint with default label
-                Constraint constraint;
-                constr_label = std::string("CONSTR") + utils::tostr<size_t>(_val(ctx).lp.constraints.size());
-                _val(ctx).label_cache = constr_label;
-                _val(ctx).lp.constraints.emplace(constr_label, constraint);
-            }
-
-            auto var_name = _attr(ctx);
-
-            // NOTE: it should be possible to accumulate the repeated variable's coefficients
-            // if (_val(ctx).lp.constraints[constr_label].has_variable(var_name))
-            // {
-            //     throw(std::string("Parser: variable already defined in constraint") + constr_label).c_str();
-            // }
-
-            if (!_val(ctx).lp.has_variable(var_name))
-            {
-                // adding new variable via constraint
-                _val(ctx).lp.add_variable(var_name);
-            }
-
-            auto coeff = _val(ctx).var_coeff_cache;
-            auto sign = _val(ctx).sign_cache;
-            _val(ctx).lp.constraints[constr_label].add_term(var_name, sign * coeff);
-        };
-
-        auto add_constr_type = [](auto &ctx)
-        {
-            _val(ctx).lp.constraints[_val(ctx).label_cache].type = _attr(ctx);
-        };
-        auto add_constr_rhs = [](auto &ctx)
-        {
-            double _rhs = _attr(ctx);
-            _val(ctx).lp.constraints[_val(ctx).label_cache].rhs = _rhs;
-            auto op = _val(ctx).lp.constraints[_val(ctx).label_cache].type;
-            if ((op == '<' && _rhs < 0.0) ||
-                (op == '>' && _rhs > 0.0) ||
-                (op == '='))
-                _val(ctx).lp.set_all_inequalities(false);
-            _val(ctx).label_cache = "";
-        };
-
-        auto add_lb_constr = [](auto &ctx)
-        {
-            auto lb = _val(ctx).var_coeff_cache; // now it contains LB
-            auto var_name = _attr(ctx);
-            _val(ctx).label_cache = var_name; // store var_name, in case we need to add UB
-            if (utils::isfloatzero(lb))
-            {
-                return;
-            }
-            _val(ctx).lp.var_lbnd[var_name] = lb;
-        };
-        auto add_ub_constr = [](auto &ctx)
-        {
-            auto var_name = _val(ctx).label_cache; // now it contains var_name
-            auto ub = _attr(ctx);
-            _val(ctx).lp.var_ubnd[var_name] = ub;
-        };
-        auto store_ub_var_name = [](auto &ctx)
-        { _val(ctx).label_cache = _attr(ctx); };
-        auto add_inf_lb = [](auto &ctx)
-        {
-            auto lb = std::numeric_limits<double>::min();
-            _val(ctx).var_coeff_cache = lb;
-        };
-        auto add_inf_ub = [](auto &ctx)
-        {
-            auto var_name = _val(ctx).label_cache; // now it contains var_name
-            auto ub = std::numeric_limits<double>::max();
-            _val(ctx).lp.var_ubnd[var_name] = ub;
-        };
-
-        // Grammar rules definitions
-        // TODO: handle properly the constant objective function, e.g., obj: 0
-
-        struct keywords_t : x3::symbols<x3::unused_type>
-        {
-            keywords_t()
-            {
-                add("Subject")("Bounds")("End")("Inf")("Infinity");
-            }
-        } const keywords;
-
-        const auto distinct_keywords = lexeme[no_case[keywords] >> !(alnum | '_')];
-
-        x3::rule<struct identifier_tag, std::string> const identifier("identifier");
-        const auto identifier_def = lexeme[+(alpha | '_') >> *(alnum | '_')] - distinct_keywords;
-
-        BOOST_SPIRIT_DEFINE(identifier);
-
-        const auto obj_fun_term =
-            -(double_[add_obj_fun_coeff]) >> identifier[add_obj_fun_var];
-
-        const auto obj_fun_expr =
-            -(identifier >> ':')[set_obj_label] >> -(char_('+') | char_('-')[neg_var_coeff]) >> obj_fun_term[term_parsed] >> *((char_('+') | char_('-')[neg_var_coeff]) > obj_fun_term[term_parsed]);
-
-        const auto constr_term =
-            -(double_[add_constr_coeff]) >> identifier[add_constr_var];
-
-        const auto constraint_expr =
-            -(identifier >> ':')[set_constr_label] >>
-            (-(char_('+') | char_('-')[neg_var_coeff]) >> constr_term[term_parsed] >> *((char_('+') | char_('-')[neg_var_coeff]) > constr_term[term_parsed]) >> (char_("<>="))[add_constr_type] >> -char_('=') >> double_[add_constr_rhs]);
-
-        const auto bound_expr =
-            ((double_[add_constr_coeff] | ('-' >> (no_case["Inf"] | no_case["Infinity"])[add_inf_lb])) >> lit("<=") >> identifier[add_lb_constr] >> -(lit("<=") >> double_[add_ub_constr])) |
-            (identifier[store_ub_var_name] >> lit("<=") >> (double_[add_ub_constr] | (-char_('+') >> (no_case["Inf"] | no_case["Infinity"])[add_inf_ub])));
-
-        x3::rule<class lp_rules, ParserState> const lp_rules("lp_rules");
-        const auto lp_rules_def =
-            skip(space)[(no_case["Minimize"][set_minimize] | no_case["Maximize"][set_maximize]) >> -char_(':') >> obj_fun_expr >> no_case["Subject To"] >> -char_(':') >> +constraint_expr >> -(no_case["Bounds"] >> -char_(':') >> +bound_expr) >> no_case["End"] >> -char_('.') >> eoi];
-
-        BOOST_SPIRIT_DEFINE(lp_rules);
+        std::transform(str.begin(), str.end(), str.begin(), [](char c)
+                       { return std::tolower(c); });
+        return str;
     }
 
-    std::string remove_comments(const std::string &input)
+    std::string parse_line(std::string::const_iterator &iter, std::string::const_iterator end)
+    {
+        std::string line;
+        while (iter != end)
+        {
+            if (*iter == '\n')
+            {
+                ++iter;
+                break;
+            }
+            line += *iter;
+            ++iter;
+        }
+        return line;
+    }
+
+    void set_sense(std::string line, simplex::LinearProgram &lp)
+    {
+        line = to_lower(line);
+
+        if (line.size() < 3)
+        {
+            throw "Expected keyword: Minimize or Maximize";
+        }
+
+        if (line.substr(0, 3) == "min")
+        {
+            lp.set_sense('m');
+        }
+        if (line.substr(0, 3) == "max")
+        {
+            lp.set_sense('M');
+        }
+    }
+
+    void expect_keyword(std::string line, std::string_view keyword)
+    {
+        if (to_lower(line) != keyword)
+        {
+            throw "Expected keyword: " + std::string(keyword);
+        }
+    }
+
+    std::string strip_spaces(std::string &line)
+    {
+        line.erase(std::remove_if(line.begin(), line.end(), ::isspace), line.end());
+        return line;
+    }
+
+    std::pair<std::string, std::string> extract_label_and_expr(const std::string &line)
+    {
+        const auto pos = line.find(':');
+        if (pos == std::string::npos)
+        {
+            return {"", line};
+        }
+        return {line.substr(0, pos), line.substr(pos + 1)};
+    }
+
+    std::vector<std::string> tokenize_expr(const std::string &expr)
+    {
+        std::vector<std::string> tokens;
+        std::string token;
+        for (const char c : expr)
+        {
+            if ((c == '+' || c == '-') && !token.empty())
+            {
+                tokens.push_back(token);
+                token.clear();
+            }
+            token += c;
+        }
+        tokens.push_back(token);
+        return tokens;
+    }
+
+    void set_objective(const std::string &expr, simplex::LinearProgram &lp)
+    {
+        const auto tokens = tokenize_expr(expr);
+        for (const auto &token : tokens)
+        {
+            const auto pos = std::find_if(token.begin(), token.end(), [](char c)
+                                          { return std::isalpha(c); });
+            if (pos == token.end())
+            {
+                throw "Invalid token in objective function: " + token;
+            }
+            const auto empty = pos == token.begin();
+            const auto single = pos - token.begin() == 1 && (token[0] == '+' || token[0] == '-');
+            const auto coeff = (!empty && !single) ? std::stod(token.substr(0, pos - token.begin())) : (token[0] == '-') ? -1.0
+                                                                                                                         : 1.0;
+            const auto var_name = token.substr(pos - token.begin());
+
+            if (lp.has_variable(var_name))
+            {
+                throw "Variable already defined in objective function: " + var_name;
+            }
+
+            lp.add_variable(var_name, coeff);
+        }
+    }
+
+    void add_constraint(const std::string &label, const std::string &expr, simplex::LinearProgram &lp)
+    {
+        auto tokens = tokenize_expr(expr);
+        if (tokens.empty())
+        {
+            throw "Empty constraint expression";
+        }
+
+        const auto pos = tokens.back().find_first_of("<=>");
+        if (pos == std::string::npos)
+        {
+            throw "Invalid constraint expression: " + tokens.back();
+        }
+        const auto rhs = std::stod(tokens.back().substr(pos + 1));
+        simplex::Constraint constraint(tokens.back().at(pos), rhs);
+
+        tokens.back() = tokens.back().substr(0, pos); // note: this invalidates pos
+
+        for (const auto &token : tokens)
+        {
+            const auto pos1 = std::find_if(token.begin(), token.end(), [](char c)
+                                           { return std::isalpha(c); });
+            const auto empty = pos1 == token.begin();
+            const auto single = pos1 - token.begin() == 1 && (token[0] == '+' || token[0] == '-');
+            const auto coeff = (!empty && !single) ? std::stod(token.substr(0, pos1 - token.begin())) : (token[0] == '-' ? -1.0 : 1.0);
+            const auto var_name = token.substr(pos1 - token.begin());
+            constraint.add_term(var_name, coeff);
+        }
+
+        lp.constraints.emplace(label, constraint);
+    }
+
+    bool parse_impl(const std::string &input, simplex::LinearProgram &lp)
+    {
+        enum ParserState
+        {
+            SetSense,
+            Objective,
+            SubjectTo,
+            Constraints,
+            Bounds
+        } state = SetSense;
+
+        auto it = input.begin();
+        const auto end = input.end();
+
+        while (it != end)
+        {
+            std::pair<std::string, std::string> label_and_expr;
+            std::string line = parse_line(it, end);
+            strip_spaces(line);
+            if (line.empty())
+            {
+                continue;
+            }
+
+            switch (state)
+            {
+            case SetSense:
+                set_sense(line, lp);
+                state = Objective;
+                break;
+
+            case Objective:
+                label_and_expr = extract_label_and_expr(line);
+                set_objective(label_and_expr.second, lp);
+                state = SubjectTo;
+                break;
+
+            case SubjectTo:
+                expect_keyword(line, "subjectto");
+                state = Constraints;
+                break;
+            case Constraints:
+                label_and_expr = extract_label_and_expr(line);
+                strip_spaces(label_and_expr.second);
+                if (to_lower(label_and_expr.second) == "bounds")
+                {
+                    state = Bounds;
+                }
+                if (to_lower(label_and_expr.second) == "end")
+                {
+                    return true;
+                }
+                add_constraint(label_and_expr.first, label_and_expr.second, lp);
+                break;
+            case Bounds:
+                break;
+            }
+        }
+        return false;
+    }
+
+    std::string remove_comments(std::string_view input)
     {
         std::string result;
         size_t pos_start = 0, pos_cur = 0;
@@ -220,24 +236,13 @@ namespace simplex
 
         return result;
     }
+}
 
-    bool run_parser_lp(const std::string &input, LinearProgram &lp)
+namespace simplex
+{
+    bool run_parser_lp(std::string_view input, LinearProgram &lp)
     {
         const std::string stripped_input = remove_comments(input);
-        auto iter = stripped_input.begin();
-        const auto end = stripped_input.end();
-
-        ParserState parser_state{lp};
-
-        bool result = parse(iter, end, parser::lp_rules, parser_state);
-
-        if (result && iter == end)
-        {
-            return true;
-        }
-        else
-        {
-            return false;
-        }
+        return parse_impl(stripped_input, lp);
     }
 }

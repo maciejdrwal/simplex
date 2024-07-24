@@ -1,5 +1,5 @@
-#ifndef _UTILS_H_
-#define _UTILS_H_
+#ifndef UTILS_H
+#define UTILS_H
 
 #include <sstream>
 
@@ -12,13 +12,13 @@ namespace utils
     }
 
     template <class T>
-    bool isfloatzero(T x)
+    bool is_float_zero(T x)
     {
         return abs(x) < 1e-9 ? true : false;
     }
 
     template <class T>
-    std::string tostr(T i)
+    std::string to_str(T i)
     {
         std::stringstream ss;
         ss << i;

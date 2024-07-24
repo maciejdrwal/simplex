@@ -2,7 +2,7 @@ TARGET = simplex
 DEBUG = 0
 OS := $(shell uname)
 
-INCLUDES = -I../boost_1_81_0/
+INCLUDES = -Iinclude/
 LIBS =
 
 ifeq ($(OS), Darwin)

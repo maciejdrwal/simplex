@@ -1,33 +1,23 @@
-// Copyright (C) 2019 Maciej Drwal
-// 
+// Copyright (C) 2024 Maciej Drwal
+//
 // Permission is granted to copy and distribute verbatim copies and modified
 // versions of this file, provided that the copyright notice and this permission
 // notice are preserved on all copies and modified versions of this file.
-// 
+//
 
 #include <iostream>
 #include <map>
 
-#include "presolve.h"
-#include "simplex.h"
-#include "utils.h"
-#include "logger.h"
+#include "Presolve.h"
+#include "Simplex.h"
+#include "Utils.h"
+#include "Logger.h"
 
 namespace simplex
 {
-    void Presolve::fix_variable(const std::string & var_name, double values)
+    void Presolve::fix_variable(Eigen::Index var_id, double values)
     {
         throw "Presolve: not implemented.";
-    }
-
-    double Presolve::get_shift(const std::string & var_name) const
-    {
-        return m_lp.var_shifts[var_name];
-    }
-
-    void Presolve::set_shift(const std::string & var_name, double value)
-    {
-        m_lp.var_shifts[var_name] = value;
     }
 
     // Eliminate all LBs by substituting:
@@ -35,25 +25,26 @@ namespace simplex
     // x' >= 0
     void Presolve::eliminate_lbs()
     {
-        for (auto & [var_name, lb_ref] : m_lp.var_lbnd)
+        for (auto &[var_id, lb_ref] : m_lp.var_lbnd)
         {
             double lb = lb_ref;
-            if (utils::isfloatzero(lb)) continue;
+            if (utils::is_float_zero(lb))
+                continue;
 
-            auto ub_it = m_lp.var_ubnd.find(var_name);
+            auto ub_it = m_lp.var_ubnd.find(var_id);
             if (ub_it != m_lp.var_ubnd.end())
             {
                 double ub = ub_it->second;
 
                 if (lb > ub)
                 {
-                    LOG(debug) << "Presolve: problem infeasible, lb>ub for variable: " << var_name;
+                    LOG(debug) << "Presolve: problem infeasible, lb>ub for variable: " << var_id;
                     std::exit(0);
                 }
-                else if (utils::isfloatzero(utils::abs(ub - lb)))
+                else if (utils::is_float_zero(utils::abs(ub - lb)))
                 {
                     // Substitute the variable by its LB;
-                    fix_variable(var_name, lb);
+                    fix_variable(var_id, lb);
                 }
                 else
                 {
@@ -62,19 +53,20 @@ namespace simplex
                 }
             }
 
-            m_lp.var_shifts[var_name] = lb;
+            m_lp.var_shifts[var_id] = lb;
             lb_ref = 0.0;
 
             // Update objective function
-            auto obj_fun_it = m_lp.objective_name_coeff.find(var_name);
-            if (obj_fun_it != m_lp.objective_name_coeff.end())
+            auto obj_fun_it = m_lp.objective_coeff.find(var_id);
+            if (obj_fun_it != m_lp.objective_coeff.end())
             {
-                LOG(debug) << "Presolve: applying shift " << lb << " to obj.fun. variable:" << var_name;
+                LOG(debug) << "Presolve: applying shift " << lb << " to obj.fun. variable:" << var_id;
                 m_lp.obj_value_shift += (obj_fun_it->second * lb);
             }
 
+            const auto &var_name = m_lp.variable_id_to_name[var_id];
             // Update constraints
-            for (auto & [constr_name, constraint] : m_lp.constraints)
+            for (auto &[constr_name, constraint] : m_lp.constraints)
             {
                 const auto a = constraint.get_coefficient(var_name);
                 if (a.has_value())
@@ -86,18 +78,20 @@ namespace simplex
         }
     }
 
-    void Presolve::apply_reductions()
+    void Presolve::apply_reductions() const
     {
-        for (const auto & constraint : m_lp.constraints)
+        for (const auto &constraint : m_lp.constraints)
         {
-            const auto & data = constraint.second;
+            const auto &data = constraint.second;
             double U = 0.0;
             double L = 0.0;
-            for (const auto & [var_name, a] : data.name_to_coeff)
+            for (const auto &[var_name, a] : data.name_to_coeff)
             {
                 // coefficient a_ij * x_i
-                double ub = m_lp.var_ubnd[var_name];
-                double lb = m_lp.var_lbnd[var_name];
+                const auto it = m_lp.variable_name_to_id.find(var_name);
+                const auto var_id = it->second;
+                double ub = m_lp.var_ubnd[var_id];
+                double lb = m_lp.var_lbnd[var_id];
                 if (a > 0.0)
                 {
                     U += a * ub;
@@ -125,7 +119,7 @@ namespace simplex
 
     void Presolve::run()
     {
-        if (b_reductions_enabled)
+        if (m_reductions_enabled)
         {
             apply_reductions();
         }

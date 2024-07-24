@@ -1,24 +1,24 @@
-// Copyright (C) 2017-2019 Maciej Drwal
+// Copyright (C) 2024 Maciej Drwal
 // 
 // Permission is granted to copy and distribute verbatim copies and modified
 // versions of this file, provided that the copyright notice and this permission
 // notice are preserved on all copies and modified versions of this file.
 // 
 
-#ifndef _PARSER_H_
-#define _PARSER_H_
+#ifndef PARSER_H
+#define PARSER_H
+
+#include "Simplex.h"
 
 namespace simplex
 {
-    class LinearProgram;
-
     enum class FileFormat
     {
         LP_FILE,
         MPS_FILE
     };
 
-    bool run_parser_lp(const std::string & input, LinearProgram & lp);
+    bool run_parser_lp(std::string_view input, simplex::LinearProgram & lp);
 }
 
 #endif

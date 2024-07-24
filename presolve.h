@@ -1,14 +1,16 @@
-// Copyright (C) 2019 Maciej Drwal
+// Copyright (C) 2024 Maciej Drwal
 // 
 // Permission is granted to copy and distribute verbatim copies and modified
 // versions of this file, provided that the copyright notice and this permission
 // notice are preserved on all copies and modified versions of this file.
 // 
 
-#ifndef _PRESOLVE_H_
-#define _PRESOLVE_H_
+#ifndef PRESOLVE_H
+#define PRESOLVE_H
 
 #include <string>
+
+#include "Eigen/Dense"
 
 namespace simplex
 {
@@ -18,7 +20,7 @@ namespace simplex
 	{
 	public:
 		Presolve(LinearProgram & lp, bool reductions_enabled = true)
-			: m_lp(lp), b_reductions_enabled(reductions_enabled) {}
+			: m_lp(lp), m_reductions_enabled(reductions_enabled) {}
 
 		~Presolve() = default;
 
@@ -26,11 +28,11 @@ namespace simplex
 
 	private:
 		LinearProgram & m_lp;
-		bool b_reductions_enabled;
+		bool m_reductions_enabled;
 
 		void eliminate_lbs();
-		void apply_reductions();
-		void fix_variable(const std::string & var_name, double values);
+		void apply_reductions() const;
+		void fix_variable(Eigen::Index var_id, double values);
 
 		void set_shift(const std::string & var_name, double value);
 		double get_shift(const std::string & var_name) const;

@@ -12,7 +12,6 @@
 #include <chrono>
 #include <csignal>
 #include <fstream>
-#include <ranges>
 #include <sstream>
 
 static const std::string ARTIFICIAL = "_ARTIFICIAL_";

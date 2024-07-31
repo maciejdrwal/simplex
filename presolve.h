@@ -14,7 +14,7 @@
 
 namespace simplex
 {
-	class LinearProgram;
+	struct LinearProgram;
 
 	class Presolve
 	{

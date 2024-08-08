@@ -25,12 +25,14 @@ namespace simplex
     // x' >= 0
     void Presolve::eliminate_lbs()
     {
-        for (auto &[var_id, lb_ref] : m_lp.var_lbnd)
+        for (auto & [var_id, lb_ref] : m_lp.var_lbnd)
         {
-            double lb = lb_ref;
-            if (utils::is_float_zero(lb))
+            if (utils::is_float_zero(lb_ref))
+            {
                 continue;
+            }
 
+            double lb = lb_ref;
             auto ub_it = m_lp.var_ubnd.find(var_id);
             if (ub_it != m_lp.var_ubnd.end())
             {
@@ -64,9 +66,9 @@ namespace simplex
                 m_lp.obj_value_shift += (obj_fun_it->second * lb);
             }
 
-            const auto &var_name = m_lp.variable_id_to_name[var_id];
+            const auto & var_name = m_lp.variable_id_to_name[var_id];
             // Update constraints
-            for (auto &[constr_name, constraint] : m_lp.constraints)
+            for (auto & [constr_name, constraint] : m_lp.constraints)
             {
                 const auto a = constraint.get_coefficient(var_name);
                 if (a.has_value())
@@ -80,12 +82,12 @@ namespace simplex
 
     void Presolve::apply_reductions() const
     {
-        for (const auto &constraint : m_lp.constraints)
+        for (const auto & constraint : m_lp.constraints)
         {
-            const auto &data = constraint.second;
+            const auto & data = constraint.second;
             double U = 0.0;
             double L = 0.0;
-            for (const auto &[var_name, a] : data.name_to_coeff)
+            for (const auto & [var_name, a] : data.name_to_coeff)
             {
                 // coefficient a_ij * x_i
                 const auto it = m_lp.variable_name_to_id.find(var_name);

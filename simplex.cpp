@@ -25,23 +25,22 @@ namespace simplex
     {
         // Note that matrix_A is stored in a column-major order.
         std::stringstream ss;
-        ss << "N=" << N << ", M=" << M << '\n';
-        ss << "A=\n"
-           << matrix_A << '\n';
-        ss << "b=\n"
-           << vector_b << '\n';
-        ss << "c=\n"
-           << vector_c << '\n';
+        ss << "A=\n" << matrix_A << '\n';
+        ss << "b=\n" << vector_b << '\n';
+        ss << "c=\n" << vector_c << '\n';
         LOG(debug) << ss.str();
     }
 
-    // Copies the data read by parser into internal data structures: A, b.
-    // Variable names are mapped here to indices using two maps:
-    // variable_name_to_id and variable_id_to_name.
+    // Copies the data read by parser into internal data structures.
     // This should be called just before simplex(), after presolve and all
     // other problem transformations.
     void LinearProgram::initialize_tableau()
     {
+        const auto M = constraints.size();
+        const auto N = objective_coeff.size();
+
+        LOG(debug) << "problem size: N=" << N << ", M=" << M;
+
         vector_b.resize(M);
         vector_c.resize(N);
         matrix_A.resize(M, N);
@@ -79,20 +78,8 @@ namespace simplex
                    << static_cast<long>(std::chrono::duration_cast<std::chrono::nanoseconds>(t_end - t_start).count()) << " ns)";
     }
 
-    // The main procedure of the solver.
-    // Initializes internal data structures and runs 2 phases of simplex algorithm.
-    void LinearProgram::solve()
+    bool LinearProgram::add_slack_variables_for_inequality_constraints(Basis & basis)
     {
-        measure_time_start();
-
-        M = constraints.size();
-        N = objective_coeff.size();
-
-        LOG(debug) << "problem size: N=" << N << ", M=" << M;
-
-        std::set<Eigen::Index> init_basis; // Initial basis.
-
-        // Add slack variables to inequality constraints, replacing them with equality.
         int num_of_slack_vars = 0;
         bool all_inequalities = true;
         for (auto & [_, constraint] : constraints)
@@ -110,53 +97,69 @@ namespace simplex
                 }
                 constraint.type = '=';
                 const auto var_id = add_variable(var_name);
-                ++N;
 
                 // If all constraints were inequalities then use slacks for initial basis.
                 if (all_inequalities)
                 {
-                    init_basis.insert(var_id);
+                    basis.insert(var_id);
                 }
                 LOG(debug) << "added slack variable: " << var_name << " (" << var_id << ")";
             }
             else
             {
                 all_inequalities = false;
+                basis.clear();
             }
         }
+        LOG(debug) << "added " << num_of_slack_vars << " slack variables, all_inequalities=" << all_inequalities;
+        return all_inequalities;
+    }
+
+    void LinearProgram::add_artificial_variables_for_first_phase(Basis & basis)
+    {
+        int art_var_id = 0;
+        LOG(debug) << "Not all constrains are inequalities A <= b, adding artificial variables.";
+        for (auto & [_, constraint] : constraints)
+        {
+            // Note: at this point there should be no inequality constraints
+            if (constraint.type == '<' || constraint.type == '>')
+            {
+                throw "All constraints must be equality at this point.";
+            }
+
+            if (constraint.rhs < 0.0)
+            {
+                constraint.rhs *= -1.0;
+
+                for (auto & [_, a] : constraint.name_to_coeff)
+                {
+                    a *= -1;
+                }
+            }
+            const std::string var_name(ARTIFICIAL + utils::to_str<int>(art_var_id++));
+            constraint.add_term(var_name, 1.0);
+            const auto var_id = add_variable(var_name);
+            basis.insert(var_id);
+            LOG(debug) << "added artificial variable: " << var_name;
+        }
+    }
+
+    // The main procedure of the solver.
+    // Initializes internal data structures and runs 2 phases of simplex algorithm.
+    void LinearProgram::solve()
+    {
+        measure_time_start();
+
+        Basis init_basis; // Initial basis.
+
+        const bool all_inequalities = add_slack_variables_for_inequality_constraints(init_basis);
 
         // note: number of variables N might have been modified by adding slack variables
 
         if (!all_inequalities)
         {
             // Construct artificial variables for Phase I.
-            init_basis.clear();
-            int art_var_id = 0;
-            LOG(debug) << "Not all constrains are inequalities A <= b, adding artificial variables.";
-            for (auto & [_, constraint] : constraints)
-            {
-                // Note: at this point there should be no inequality constraints
-                if (constraint.type == '<' || constraint.type == '>')
-                {
-                    throw "All constraints must be equality at this point.";
-                }
-
-                if (constraint.rhs < 0.0)
-                {
-                    constraint.rhs *= -1.0;
-
-                    for (auto & [_, a] : constraint.name_to_coeff)
-                    {
-                        a *= -1;
-                    }
-                }
-                const std::string var_name(ARTIFICIAL + utils::to_str<int>(art_var_id++));
-                constraint.add_term(var_name, 1.0);
-                const auto var_id = add_variable(var_name);
-                ++N;
-                init_basis.insert(var_id);
-                LOG(debug) << "added artificial variable: " << var_name;
-            }
+            add_artificial_variables_for_first_phase(init_basis);
 
             // note: number of variables N has changed after adding artificial variables
 
@@ -246,7 +249,7 @@ namespace simplex
     // A^T * y = c
     // The result is stored in _vector_cy, thus enough space must be allocated.
     // If factorize = false then _matrix_A must contain LU factors of A on input.
-    void LinearProgram::lineq_solve(Eigen::MatrixXd &matrix_A, Eigen::VectorXd &vector_bx, Eigen::VectorXd &vector_cy, bool factorize = true)
+    void LinearProgram::lineq_solve(Eigen::MatrixXd & matrix_A, Eigen::VectorXd & vector_bx, Eigen::VectorXd & vector_cy, bool factorize = true)
     {
         // int info;
         // int one_int = 1;
@@ -305,7 +308,9 @@ namespace simplex
         for (int i = 0; i < N - M; i++)
         {
             if (vector_c_N[i] < 0.0)
+            {
                 return i;
+            }
         }
         return -1;
     }
@@ -559,24 +564,18 @@ namespace simplex
                 jN++;
             }
 
-            LOG(debug) << "A_B=\n"
-                       << matrix_A_B;
-            LOG(debug) << "A_N=\n"
-                       << matrix_A_N;
-            LOG(debug) << "c_B=\n"
-                       << vector_c_B;
-            LOG(debug) << "c_N=\n"
-                       << vector_c_N;
+            LOG(debug) << "A_B=\n" << matrix_A_B;
+            LOG(debug) << "A_N=\n" << matrix_A_N;
+            LOG(debug) << "c_B=\n" << vector_c_B;
+            LOG(debug) << "c_N=\n" << vector_c_N;
 
             // Compute x = A_B^{-1} * b and y = (A_B^T)^{-1} * c_B
             Eigen::VectorXd vector_bx = vector_b;
             Eigen::VectorXd vector_cy = vector_c_B;
             lineq_solve(matrix_A_B, vector_bx, vector_cy);
 
-            LOG(debug) << "solved x=\n"
-                       << vector_bx;
-            LOG(debug) << "solved y=\n"
-                       << vector_cy;
+            LOG(debug) << "solved x=\n" << vector_bx;
+            LOG(debug) << "solved y=\n" << vector_cy;
 
             // Pricing (reduced costs): s = c_N - (A_N)^T * y
             // Multiply matrix by vector: y = alpha * A * x + beta * y.
@@ -665,7 +664,7 @@ namespace simplex
     ///@param var_name - name of the new variable
     ///@param coeff - the coefficient of the variable in the objective function
     ///@return the index of the new variable
-    Eigen::Index LinearProgram::add_variable(const std::string &var_name, double coeff)
+    Eigen::Index LinearProgram::add_variable(const std::string & var_name, double coeff)
     {
         const auto var_id = next_variable_id++;
         variable_name_to_id[var_name] = var_id;

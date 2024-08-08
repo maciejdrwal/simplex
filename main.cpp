@@ -5,12 +5,12 @@
 // notice are preserved on all copies and modified versions of this file.
 //
 
-#include <iostream>
-#include <fstream>
-
 #include "Parser.h"
 #include "Presolve.h"
 #include "Simplex.h"
+
+#include <iostream>
+#include <fstream>
 
 int main(int argc, char **argv)
 {
@@ -23,20 +23,10 @@ int main(int argc, char **argv)
         return 1;
     }
 
-    simplex::FileFormat file_format;
-
     const std::string_view filename(argv[1]);
-    if (filename.substr(filename.find_last_of('.') + 1) == "lp")
+    if (filename.substr(filename.find_last_of('.') + 1) != "lp")
     {
-        file_format = simplex::FileFormat::LP_FILE;
-    }
-    else if (filename.substr(filename.find_last_of('.') + 1) == "mps")
-    {
-        file_format = simplex::FileFormat::MPS_FILE;
-    }
-    else
-    {
-        std::cout << "Unrecognized file extension (must be one of: .lp, .mps)." << std::endl;
+        std::cout << "Unrecognized file extension (must be .lp)." << std::endl;
         return 1;
     }
 

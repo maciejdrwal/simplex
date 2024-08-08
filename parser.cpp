@@ -5,11 +5,11 @@
 //// notice are preserved on all copies and modified versions of this file.
 ////
 
+#include "Parser.h"
+
 #include <algorithm>
 #include <locale>
 #include <string>
-
-#include "Parser.h"
 
 namespace
 {

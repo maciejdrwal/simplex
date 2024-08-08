@@ -5,13 +5,13 @@
 // notice are preserved on all copies and modified versions of this file.
 //
 
-#include <iostream>
-#include <map>
-
 #include "Presolve.h"
 #include "Simplex.h"
 #include "Utils.h"
 #include "Logger.h"
+
+#include <iostream>
+#include <map>
 
 namespace simplex
 {

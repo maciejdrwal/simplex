@@ -12,12 +12,6 @@
 
 namespace simplex
 {
-    enum class FileFormat
-    {
-        LP_FILE,
-        MPS_FILE
-    };
-
     bool run_parser_lp(std::string_view input, simplex::LinearProgram & lp);
 }
 

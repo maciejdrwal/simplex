@@ -66,16 +66,13 @@ namespace simplex
     {
         friend class Presolve;
 
-        //size_t N;
-        //size_t M;
-
         std::map<std::string, Constraint> constraints;
         std::map<Eigen::Index, double> objective_coeff;  // maps variable indices x_j to their c_j
         std::map<Eigen::Index, double> var_lbnd;         // LBs are set to 0 by variable substitutions in presovle
         std::map<Eigen::Index, double> var_ubnd;         // UBs are modified by presolve
         double obj_value_shift;                          // constant term in objective function
 
-        using Basis = std::set<Eigen::Index>;
+        using Basis = std::vector<Eigen::Index>;
 
         LinearProgram() : obj_value_shift(0.0), sense('m'), objective_value(0.0) {}
 
@@ -85,7 +82,7 @@ namespace simplex
         bool add_slack_variables_for_inequality_constraints(Basis & basis);
 
         /// @brief Add artificial variables for each equality constraint, and return basis consisting of their indices.
-        void add_artificial_variables_for_first_phase(Basis & basis);
+        int add_artificial_variables_for_first_phase(Basis & basis);
 
         void solve();
         void write(const std::string & filename) const;
@@ -108,8 +105,6 @@ namespace simplex
         char sense;  // M=maximize / m=minimize
         double objective_value;
 
-        //std::vector<Eigen::Index> basis;
-        //std::vector<Eigen::Index> non_basis;
         std::vector<bool> ub_substitutions;
 
         std::map<std::string, Eigen::Index> variable_name_to_id;
@@ -119,7 +114,7 @@ namespace simplex
 
         void initialize_tableau();
         void print_tableau() const;
-        int simplex(std::set<Eigen::Index> & arg_basis);
+        int simplex(Basis & arg_basis);
         void lineq_solve(Eigen::MatrixXd & matrix_A, Eigen::VectorXd & vector_bx, Eigen::VectorXd & vector_cy,
                          bool factorize);
         int select_entering_variable_Bland(const Eigen::VectorXd & vector_c_N) const;
@@ -129,7 +124,8 @@ namespace simplex
         int select_leaving_variable_SUB(double * vector_bx, double * vector_cy, double * matrix_A_B,
                                         int entering_index);
         void upper_bound_substitution(Eigen::Index var_id, double ub);
-        void solution_found(Eigen::VectorXd & vector_bx, const Eigen::VectorXd & vector_c_B);
+        void solution_found(Eigen::VectorXd & vector_bx, const Eigen::VectorXd & vector_c_B, 
+                            const Basis & basis, const Basis & non_basis);
     };
 }  // namespace simplex
 

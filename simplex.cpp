@@ -63,19 +63,20 @@ namespace simplex
         objective_value = 0.0;
     }
 
-    inline void measure_time_start()
-    {
-        t_start = std::chrono::steady_clock::now();
-    }
+    inline void measure_time_start() { t_start = std::chrono::steady_clock::now(); }
 
     inline void print_elapsed_time()
     {
         auto t_end = std::chrono::steady_clock::now();
         LOG(debug) << "Elapsed time: "
-                   << static_cast<long>(std::chrono::duration_cast<std::chrono::seconds>(t_end - t_start).count()) << " s ("
-                   << static_cast<long>(std::chrono::duration_cast<std::chrono::milliseconds>(t_end - t_start).count()) << " ms, "
-                   << static_cast<long>(std::chrono::duration_cast<std::chrono::microseconds>(t_end - t_start).count()) << " us, "
-                   << static_cast<long>(std::chrono::duration_cast<std::chrono::nanoseconds>(t_end - t_start).count()) << " ns)";
+                   << static_cast<long>(std::chrono::duration_cast<std::chrono::seconds>(t_end - t_start).count())
+                   << " s ("
+                   << static_cast<long>(std::chrono::duration_cast<std::chrono::milliseconds>(t_end - t_start).count())
+                   << " ms, "
+                   << static_cast<long>(std::chrono::duration_cast<std::chrono::microseconds>(t_end - t_start).count())
+                   << " us, "
+                   << static_cast<long>(std::chrono::duration_cast<std::chrono::nanoseconds>(t_end - t_start).count())
+                   << " ns)";
     }
 
     bool LinearProgram::add_slack_variables_for_inequality_constraints(Basis & basis)
@@ -101,7 +102,7 @@ namespace simplex
                 // If all constraints were inequalities then use slacks for initial basis.
                 if (all_inequalities)
                 {
-                    basis.insert(var_id);
+                    basis.push_back(var_id);
                 }
                 LOG(debug) << "added slack variable: " << var_name << " (" << var_id << ")";
             }
@@ -115,7 +116,7 @@ namespace simplex
         return all_inequalities;
     }
 
-    void LinearProgram::add_artificial_variables_for_first_phase(Basis & basis)
+    int LinearProgram::add_artificial_variables_for_first_phase(Basis & basis)
     {
         int art_var_id = 0;
         LOG(debug) << "Not all constrains are inequalities A <= b, adding artificial variables.";
@@ -139,9 +140,10 @@ namespace simplex
             const std::string var_name(ARTIFICIAL + utils::to_str<int>(art_var_id++));
             constraint.add_term(var_name, 1.0);
             const auto var_id = add_variable(var_name);
-            basis.insert(var_id);
+            basis.push_back(var_id);
             LOG(debug) << "added artificial variable: " << var_name;
         }
+        return art_var_id;
     }
 
     // The main procedure of the solver.
@@ -150,7 +152,7 @@ namespace simplex
     {
         measure_time_start();
 
-        Basis init_basis; // Initial basis.
+        Basis init_basis;  // Initial basis.
 
         const bool all_inequalities = add_slack_variables_for_inequality_constraints(init_basis);
 
@@ -159,7 +161,7 @@ namespace simplex
         if (!all_inequalities)
         {
             // Construct artificial variables for Phase I.
-            add_artificial_variables_for_first_phase(init_basis);
+            const auto art_var_id = add_artificial_variables_for_first_phase(init_basis);
 
             // note: number of variables N has changed after adding artificial variables
 
@@ -183,16 +185,17 @@ namespace simplex
                 auto var_id = variable_name_to_id[var_name];
 
                 // Check if some artificial variable remained in the basis.
-                if (init_basis.count(var_id) > 0)
+                if (std::find(init_basis.begin(), init_basis.end(), var_id) != init_basis.end())
                 {
                     // TODO: handle this case
 
                     // init_basis.erase(var_name);
-                    // for (map<string, int>::iterator jt = variable_name_to_id.begin(); jt != variable_name_to_id.end(); ++jt) {
+                    // for (map<string, int>::iterator jt = variable_name_to_id.begin(); jt !=
+                    // variable_name_to_id.end(); ++jt) {
                     //     if (init_basis.count(jt->second) == 0 && (strncmp(jt->first.c_str(), ARTIFICIAL, 12) != 0)) {
                     //         init_basis.insert(jt->second);
-                    //         printf("replaced variable %d (%s) by %d (%s) in the basis\n",  var_id, var_name.c_str(), jt->second, jt->first.c_str());
-                    //         break;
+                    //         printf("replaced variable %d (%s) by %d (%s) in the basis\n",  var_id, var_name.c_str(),
+                    //         jt->second, jt->first.c_str()); break;
                     //     }
                     // }
 
@@ -205,7 +208,6 @@ namespace simplex
                 remove_variable(var_id);
                 variable_name_to_id.erase(var_name);
                 LOG(debug) << "removed artificial variable: " << var_name;
-                --N;
             }
 
             // note: number of variables N has changed after removing artificial variables
@@ -228,7 +230,7 @@ namespace simplex
             initialize_tableau();
 
             // Prepare the original objective function.
-            for (const auto &[i, coeff] : objective_coeff)
+            for (const auto & [i, coeff] : objective_coeff)
             {
                 vector_c[i] = (sense == 'm') ? coeff : -coeff;
             }
@@ -249,7 +251,8 @@ namespace simplex
     // A^T * y = c
     // The result is stored in _vector_cy, thus enough space must be allocated.
     // If factorize = false then _matrix_A must contain LU factors of A on input.
-    void LinearProgram::lineq_solve(Eigen::MatrixXd & matrix_A, Eigen::VectorXd & vector_bx, Eigen::VectorXd & vector_cy, bool factorize = true)
+    void LinearProgram::lineq_solve(Eigen::MatrixXd & matrix_A, Eigen::VectorXd & vector_bx,
+                                    Eigen::VectorXd & vector_cy, bool factorize = true)
     {
         // int info;
         // int one_int = 1;
@@ -258,9 +261,8 @@ namespace simplex
         // if (factorize)
         //{
         //     // LU factorization: A = P * L * U
-        //     // Arguments: num. of rows, num. of cols., matrix (on exit: LU factors), leading dimension of array, pivot indices, info.
-        //     dgetrf_(&M, &M, _matrix_A, &M, ipiv, &info);
-        //     if (info != 0)
+        //     // Arguments: num. of rows, num. of cols., matrix (on exit: LU factors), leading dimension of array,
+        //     pivot indices, info. dgetrf_(&M, &M, _matrix_A, &M, ipiv, &info); if (info != 0)
         //     {
         //         // info < 0: argument "-info" has illegal value
         //         // info > 0: diagonal element at "info" of the factor U from the factorization is exactly 0
@@ -270,10 +272,9 @@ namespace simplex
 
         //    // Compute: A^T * y = c
         //    // Arguments: transpose, order of matrix, num. of r.h.sides, LU factors in single matrix (from dgetrf),
-        //    // leading dimension of array, pivot indices from DGETRF, rhs (on exit: the solution), leading dimension of rhs, info.
-        //    char transpose = 'T';
-        //    dgetrs_(&transpose, &M, &one_int, _matrix_A, &M, ipiv, _vector_cy, &M, &info);
-        //    if (info != 0)
+        //    // leading dimension of array, pivot indices from DGETRF, rhs (on exit: the solution), leading dimension
+        //    of rhs, info. char transpose = 'T'; dgetrs_(&transpose, &M, &one_int, _matrix_A, &M, ipiv, _vector_cy, &M,
+        //    &info); if (info != 0)
         //    {
         //        // info < 0: argument "-info" has illegal value
         //        LOG(debug) << "dgetrs_ #1 failed with error code " << static_cast<int>(info);
@@ -303,8 +304,10 @@ namespace simplex
 
     // Bland's rule for pivoting.
     // Choose entering index to be lexicographically first with s_j < 0.
-    int LinearProgram::select_entering_variable_Bland(const Eigen::VectorXd &vector_c_N) const
+    int LinearProgram::select_entering_variable_Bland(const Eigen::VectorXd & vector_c_N) const
     {
+        const auto M = constraints.size();
+        const auto N = objective_coeff.size();
         for (int i = 0; i < N - M; i++)
         {
             if (vector_c_N[i] < 0.0)
@@ -318,12 +321,14 @@ namespace simplex
     // Bland's rule for pivoting.
     // Choose leaving index to be lexicographically first with min{ x_i / d_i, d_i > 0 },
     // d = A_B^{-1} * A(entering_index)
-    int LinearProgram::select_leaving_variable_Bland(Eigen::VectorXd &vector_bx, Eigen::VectorXd &vector_cy, Eigen::MatrixXd &matrix_A_B)
+    int LinearProgram::select_leaving_variable_Bland(Eigen::VectorXd & vector_bx, Eigen::VectorXd & vector_cy,
+                                                     Eigen::MatrixXd & matrix_A_B)
     {
         // Solve: A_B * d = A(entering_index). Note that matrix_A_B already contains LU factors.
         Eigen::VectorXd unused;
         lineq_solve(matrix_A_B, vector_cy, unused, false);
 
+        const auto M = constraints.size();
         int min_i = -1;
         double min_lbd = std::numeric_limits<double>::max();
         for (int i = 0; i < M; i++)
@@ -342,10 +347,12 @@ namespace simplex
     }
 
     // Choose the most negative value among s_j < 0.
-    int LinearProgram::select_entering_variable_most_neg(const Eigen::VectorXd &vector_c_N) const
+    int LinearProgram::select_entering_variable_most_neg(const Eigen::VectorXd & vector_c_N) const
     {
         int min_i = -1;
         double min_value = std::numeric_limits<double>::max();
+        const auto M = constraints.size();
+        const auto N = objective_coeff.size();
         for (int i = 0; i < N - M; i++)
         {
             if (vector_c_N[i] < 0.0 && vector_c_N[i] < min_value)
@@ -358,7 +365,8 @@ namespace simplex
     }
 
     // Simple Upper Bound rule for pivoting.
-    int LinearProgram::select_leaving_variable_SUB(double *vector_bx, double *vector_cy, double *matrix_A_B, int entering_index)
+    int LinearProgram::select_leaving_variable_SUB(double * vector_bx, double * vector_cy, double * matrix_A_B,
+                                                   int entering_index)
     {
         // Solve: A_B * d = A(entering_index). Note that matrix_A_B already contains LU factors.
         // Result d is stored in vector_cy.
@@ -411,7 +419,7 @@ namespace simplex
         //     }
         // }
 
-        return min_i; // perform usual pivot (except if min_i == -1)
+        return min_i;  // perform usual pivot (except if min_i == -1)
     }
 
     void LinearProgram::upper_bound_substitution(Eigen::Index var_id, double ub)
@@ -420,6 +428,7 @@ namespace simplex
         vector_c[var_id] = -vector_c[var_id];
 
         // Modify constraints: a_{js} x_s -> -a_{js} x_s, b_j -> b_j - a_{js}*u_s
+        const auto M = constraints.size();
         for (auto i = 0u; i < M; i++)
         {
             const auto a = matrix_A(i, var_id);
@@ -430,15 +439,15 @@ namespace simplex
         ub_substitutions[var_id] = !ub_substitutions[var_id];
     }
 
-    void LinearProgram::solution_found(Eigen::VectorXd &vector_bx, const Eigen::VectorXd &vector_c_B)
+    void LinearProgram::solution_found(Eigen::VectorXd & vector_bx, const Eigen::VectorXd & vector_c_B, const Basis & basis, const Basis & non_basis)
     {
         double cost = 0.0;
         solution.clear();
 
-        for (auto i = 0u; i < basis.size(); ++i)
+        for (size_t i = 0u; i < basis.size(); ++i)
         {
             const auto var_id = basis[i];
-            const std::string &var_name = variable_id_to_name[var_id];
+            const std::string & var_name = variable_id_to_name[var_id];
 
             // Reverse UB-substitution
             if (ub_substitutions[var_id])
@@ -461,11 +470,11 @@ namespace simplex
             solution[var_name] = vector_bx[i];
             cost += vector_c_B[i] * vector_bx[i];
         }
-        for (auto i = 0u; i < non_basis.size(); ++i)
+
+        for (auto var_id : non_basis)
         {
-            const auto var_id = non_basis[i];
             double q = 0.0;
-            const std::string &var_name = variable_id_to_name[var_id];
+            const std::string & var_name = variable_id_to_name[var_id];
 
             // Reverse UB-substitution
             if (ub_substitutions[var_id])
@@ -495,7 +504,7 @@ namespace simplex
         LOG(debug) << "OPTIMAL X FOUND.\nValue = " << objective_value;
     }
 
-    std::string print_basis(const std::vector<Eigen::Index> &basis)
+    std::string print_basis(const std::vector<Eigen::Index> & basis)
     {
         std::stringstream ss;
         for (auto i : basis)
@@ -507,7 +516,7 @@ namespace simplex
 
     // The (Revised) Simplex Algorithm.
     // arg_basis : on input: initial basis; on result: final basis
-    int LinearProgram::simplex(std::set<Eigen::Index> &arg_basis)
+    int LinearProgram::simplex(Basis & arg_basis)
     {
         std::stringstream ss;
         for (const auto var : arg_basis)
@@ -516,22 +525,25 @@ namespace simplex
         }
         LOG(info) << "simplex basis: " << ss.str();
 
+        const auto M = constraints.size();
+        const auto N = objective_coeff.size();
+
         Eigen::MatrixXd matrix_A_B(M, M);
         Eigen::MatrixXd matrix_A_N(M, N - M);
         Eigen::VectorXd vector_c_B(M);
         Eigen::VectorXd vector_c_N(N - M);
 
-        basis.clear();
-        non_basis.clear();
+        Basis basis;
+        Basis non_basis;
         for (auto i = 0; i < N; i++)
         {
-            if (arg_basis.count(i) == 0)
+            if (std::find(arg_basis.begin(), arg_basis.end(), i) != arg_basis.end())
             {
-                non_basis.push_back(i);
+                basis.push_back(i);
             }
             else
             {
-                basis.push_back(i);
+                non_basis.push_back(i);
             }
         }
 
@@ -539,7 +551,7 @@ namespace simplex
         ub_substitutions.assign(N, false);
 
         unsigned long iteration_count = 0L;
-        constexpr unsigned long iteration_limit = 10L; // 1000000000L;
+        constexpr unsigned long iteration_limit = 1000000000L;
         while (iteration_count < iteration_limit)
         {
             iteration_count++;
@@ -579,16 +591,15 @@ namespace simplex
 
             // Pricing (reduced costs): s = c_N - (A_N)^T * y
             // Multiply matrix by vector: y = alpha * A * x + beta * y.
-            // Arguments: storage order, transpose, num. of rows, num. of cols., alpha, matrix A, l.d.a. of A, vect. x, incx, beta, y, incy.
-            // NOTE 1: the first argument "storage order" is not in the original CBLAS specification
-            // NOTE 2: the second argument should be 'T' according to the original CBLAS
-            // cblas_dgemv(CblasColMajor, CblasTrans, M, N - M, -1.0, matrix_A_N.get(), M, vector_cy.get(), 1, 1.0, vector_c_N.get(), 1);
-            // Now vector_c_N contains the result s.
+            // Arguments: storage order, transpose, num. of rows, num. of cols., alpha, matrix A, l.d.a. of A, vect. x,
+            // incx, beta, y, incy. NOTE 1: the first argument "storage order" is not in the original CBLAS
+            // specification NOTE 2: the second argument should be 'T' according to the original CBLAS
+            // cblas_dgemv(CblasColMajor, CblasTrans, M, N - M, -1.0, matrix_A_N.get(), M, vector_cy.get(), 1, 1.0,
+            // vector_c_N.get(), 1); Now vector_c_N contains the result s.
 
             Eigen::VectorXd s = vector_c_N - matrix_A_N.transpose() * vector_cy;
 
-            LOG(debug) << "reduced costs s=\n"
-                       << s;
+            LOG(debug) << "reduced costs s=\n" << s;
 
             // 1) Select the entering variable.
             const int entering_index = select_entering_variable_Bland(s);
@@ -596,12 +607,8 @@ namespace simplex
 
             if (entering_index == -1)
             {
-                solution_found(vector_bx, vector_c_B);
-                arg_basis.clear();
-                for (auto i = 0; i < M; i++)
-                {
-                    arg_basis.insert(basis[i]);
-                }
+                solution_found(vector_bx, vector_c_B, basis, non_basis);
+                arg_basis = basis;
                 break;
             }
 
@@ -637,7 +644,7 @@ namespace simplex
     }
 
     // Write the solution to text file.
-    void LinearProgram::write(const std::string &filename) const
+    void LinearProgram::write(const std::string & filename) const
     {
         LOG(debug) << "Writing solution...\n";
 
@@ -670,7 +677,7 @@ namespace simplex
         variable_name_to_id[var_name] = var_id;
         variable_id_to_name[var_id] = var_name;
         objective_coeff[var_id] = coeff;
-        var_lbnd[var_id] = 0.0; // set default bounds
+        var_lbnd[var_id] = 0.0;  // set default bounds
         var_ubnd[var_id] = std::numeric_limits<double>::max();
 
         return var_id;
@@ -684,8 +691,8 @@ namespace simplex
         variable_id_to_name.erase(var_id);
     }
 
-    bool LinearProgram::has_variable(const std::string &var_name) const
+    bool LinearProgram::has_variable(const std::string & var_name) const
     {
         return variable_name_to_id.count(var_name) > 0;
     }
-}
+}  // namespace simplex

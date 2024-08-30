@@ -54,10 +54,11 @@ int main(int argc, char **argv)
         simplex::LinearProgram lp;
         run_parser_lp(buffer, lp);
         buffer.clear();
-        simplex::Presolve presolve(lp);
-        presolve.run();
-        lp.solve();
-        lp.write("sol_test.xml");
+        simplex::Presolve pre_solver(lp);
+        pre_solver.run();
+        simplex::Simplex main_solver(lp);
+        main_solver.solve();
+        main_solver.write("sol_test.xml");
     }
     catch (const std::string &msg)
     {

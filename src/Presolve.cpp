@@ -45,7 +45,7 @@ namespace simplex
                 }
                 else if (utils::is_float_zero(utils::abs(ub - lb)))
                 {
-                    // Substitute the variable by its LB;
+                    // Substitute the variable by its LB
                     fix_variable(var_id, lb);
                 }
                 else
@@ -58,22 +58,23 @@ namespace simplex
             m_lp.var_shifts[var_id] = lb;
             lb_ref = 0.0;
 
+            const auto & var_name = m_lp.variable_id_to_name[var_id];
+
             // Update objective function
             auto obj_fun_it = m_lp.objective_coeff.find(var_id);
             if (obj_fun_it != m_lp.objective_coeff.end())
             {
-                LOG(debug) << "Presolve: applying shift " << lb << " to obj.fun. variable:" << var_id;
+                LOG(debug) << "Presolve: applying shift " << lb << " to obj.fun. variable: " << var_name;
                 m_lp.obj_value_shift += (obj_fun_it->second * lb);
             }
 
-            const auto & var_name = m_lp.variable_id_to_name[var_id];
             // Update constraints
             for (auto & [constr_name, constraint] : m_lp.constraints)
             {
                 const auto a = constraint.get_coefficient(var_name);
                 if (a.has_value())
                 {
-                    LOG(debug) << "Presolve: applying shift " << lb << " to constraint " << constr_name << " variable " << var_name;
+                    LOG(debug) << "Presolve: applying shift " << lb << " to constraint " << constr_name << " variable: " << var_name;
                     constraint.rhs -= (lb * a.value());
                 }
             }
@@ -105,7 +106,7 @@ namespace simplex
                     L += a * ub;
                 }
             }
-            LOG(debug) << "apply_reductions: constr:" << constraint.first << " L=" << L << " U=" << U;
+            LOG(debug) << "Presolve: applying reduction to constraint:" << constraint.first << " L=" << L << " U=" << U;
             if ((data.type == '<' && U <= data.rhs) ||
                 (data.type == '>' && L >= data.rhs))
             {
@@ -114,7 +115,8 @@ namespace simplex
             if (((data.type == '<' || data.type == '=') && L > data.rhs) ||
                 ((data.type == '>' || data.type == '=') && U < data.rhs))
             {
-                LOG(debug) << "  no feasible sol.";
+                LOG(debug) << "  no feasible solution";
+                std::exit(0);
             }
         }
     }
@@ -126,5 +128,18 @@ namespace simplex
             apply_reductions();
         }
         eliminate_lbs();
+
+        // Add constraint for upper bound
+        //     for (auto & [var_id, ub] : m_lp.var_ubnd)
+        //     {
+        //         const auto it = m_lp.variable_id_to_name.find(var_id);
+        //         if (it == m_lp.variable_id_to_name.end())
+        //         {
+        //	throw "Presolve: variable not found.";
+        //}
+        //         Constraint constraint('<', ub);
+        //         constraint.add_term(it->second);
+        //         m_lp.constraints.emplace("UB_" + it->second, std::move(constraint));
+        //     }
     }
 }

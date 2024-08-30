@@ -1,0 +1,102 @@
+// Copyright (C) 2024 Maciej Drwal
+//
+// Permission is granted to copy and distribute verbatim copies and modified
+// versions of this file, provided that the copyright notice and this permission
+// notice are preserved on all copies and modified versions of this file.
+//
+
+#ifndef LINEAR_PROGRAM_H
+#define LINEAR_PROGRAM_H
+
+#include <map>
+#include <optional>
+#include <string_view>
+#include <vector>
+
+#include "Eigen/Dense"
+
+namespace simplex
+{
+    struct Constraint
+    {
+        char type;
+        double rhs;
+        std::map<std::string, double> name_to_coeff;  // variable names and coefficients a_{ij}
+
+        Constraint(char _type = '<', double _rhs = 0.0) : type(_type), rhs(_rhs) {}
+
+        void add_term(std::string_view name, double a = 1.0);
+        bool has_variable(std::string_view name) const;
+        std::optional<double> get_coefficient(std::string_view name) const;
+        void remove_term(std::string_view name);
+        void negate_sides();
+    };
+
+    using Basis = std::vector<Eigen::Index>;
+
+    //
+    // A standard form LP:
+    // min c^T x
+    // s.t.: Ax = b, 0 <= x <= UB
+    //
+    struct LinearProgram
+    {
+        friend class Presolve;
+        friend class Simplex;
+
+        std::map<std::string, Constraint> constraints;
+        std::map<Eigen::Index, double> objective_coeff;  // maps variable indices x_j to their c_j
+        std::map<Eigen::Index, double> var_lbnd;         // LBs are set to 0 by variable substitutions in presovle
+        std::map<Eigen::Index, double> var_ubnd;         // UBs are modified by presolve
+
+        std::string objective_label;
+
+        Eigen::MatrixXd matrix_A;
+        Eigen::VectorXd vector_b;
+        Eigen::VectorXd vector_c;
+
+        char sense = 'm';  // M=maximize / m=minimize
+
+        /// @brief Copies the data read by parser into internal data structures.
+        void initialize_tableau();
+
+        /// @brief Print internal data structures on screen (for debugging).
+        void print_tableau() const;
+
+        /// @brief Add slack variables to inequality constraints, replacing them with equality.
+        ///        The added slack variables are inserted into the basis.
+        /// @return true if all the problem's constraints are inequalities
+        bool add_slack_variables_for_inequality_constraints(Basis & basis);
+
+        /// @brief Add artificial variables for each equality constraint, and return basis consisting of their indices.
+        int add_artificial_variables_for_first_phase(Basis & basis);
+
+        static std::string get_artificial_variable(int i);
+
+        Eigen::Index add_variable(const std::string & var_name, double coeff = 0.0);
+        void remove_variable(Eigen::Index var_id);
+        bool has_variable(const std::string & var_name) const;
+        Eigen::Index get_variable_id(const std::string & var_name) const;
+        void set_sense(const char s) { sense = s; }
+        void set_objective_label(const std::string & label) { objective_label = label; }
+
+        /// @brief Apply upper-bound substitution to a given variable.
+        void upper_bound_substitution(Eigen::Index var_id, double ub);
+        bool has_non_trivial_upper_bounds() const { return m_has_UBS; }
+        void set_has_non_trivial_upper_bounds(bool b) { m_has_UBS = b; }
+
+    private:
+
+        Eigen::Index next_variable_id = 0;
+        std::map<std::string, Eigen::Index> variable_name_to_id;
+        std::map<Eigen::Index, std::string> variable_id_to_name;
+
+        std::vector<bool> ub_substitutions;
+
+        double obj_value_shift = 0.0;  // constant term in objective function
+        std::map<Eigen::Index, double> var_shifts;
+        bool m_has_UBS = false;
+    };
+}  // namespace simplex
+
+#endif

@@ -1,6 +1,6 @@
 Maximize
   obj: s
-  
+
 Subject To:
   C1: x12 - x23 - x24 - x25 = 0
   C2: x24 - x45 - x46 = 0

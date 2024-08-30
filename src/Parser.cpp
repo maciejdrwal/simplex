@@ -11,6 +11,8 @@
 #include <locale>
 #include <string>
 
+#include "Utils.h"
+
 namespace
 {
     std::string to_lower(std::string str)
@@ -54,18 +56,30 @@ namespace
         }
     }
 
-    void expect_keyword(std::string line, std::string_view keyword)
+    std::string strip_chars(std::string & line, const std::function<bool(char)> & pred)
     {
-        if (to_lower(line) != keyword)
-        {
-            throw "Expected keyword: " + std::string(keyword);
-        }
+        line.erase(std::remove_if(line.begin(), line.end(), pred), line.end());
+        return line;
     }
 
     std::string strip_spaces(std::string & line)
     {
-        line.erase(std::remove_if(line.begin(), line.end(), ::isspace), line.end());
-        return line;
+        return strip_chars(line, [](char c) { return isspace(c); });
+    }
+
+    std::string as_keyword(const std::string & line)
+    {
+        std::string tmp_line(line);
+        return to_lower(strip_chars(tmp_line, [](char c) { return c == ':'; }));
+    }
+
+    void expect_keyword(std::string line, std::string_view keyword)
+    {
+        line = to_lower(strip_chars(line, [](char c) { return c == ':'; }));
+        if (line != keyword)
+        {
+            throw "Expected keyword: " + std::string(keyword);
+        }
     }
 
     std::pair<std::string, std::string> extract_label_and_expr(const std::string & line)
@@ -129,15 +143,17 @@ namespace
             throw "Empty constraint expression";
         }
 
-        const auto pos = tokens.back().find_first_of("<=>");
+        auto pos = tokens.back().find_first_of("<=>");
+        const auto sign = tokens.back().at(pos);
         if (pos == std::string::npos)
         {
             throw "Invalid constraint expression: " + tokens.back();
         }
-        const auto rhs = std::stod(tokens.back().substr(pos + 1));
-        simplex::Constraint constraint(tokens.back().at(pos), rhs);
+        while (!isdigit(tokens.back().at(pos + 1))) { ++pos; }
+        const auto rhs = tokens.back().substr(pos + 1);
+        simplex::Constraint constraint(sign, stod(rhs));
 
-        tokens.back() = tokens.back().substr(0, pos);  // note: this invalidates pos
+        tokens.back() = tokens.back().substr(0, tokens.back().find(sign));  // note: this invalidates pos
 
         for (const auto & token : tokens)
         {
@@ -147,10 +163,61 @@ namespace
             const auto coeff =
                 (!empty && !single) ? std::stod(token.substr(0, pos1 - token.begin())) : (token[0] == '-' ? -1.0 : 1.0);
             const auto var_name = token.substr(pos1 - token.begin());
+            if (!lp.has_variable(var_name))
+            {
+                lp.add_variable(var_name);
+            }
             constraint.add_term(var_name, coeff);
         }
 
         lp.constraints.emplace(label, constraint);
+    }
+
+    void parse_bounds(const std::string & line, simplex::LinearProgram & lp)
+    {
+        std::vector<std::string> tokens;
+        const auto pos1 = line.find_first_of("<=");
+        const auto pos2 = line.find_last_of("<=");
+        const auto single_bound = pos2 - pos1 <= 1;
+        const auto term_1st = line.substr(0, pos1);
+        const auto term_3rd = line.substr(pos2 + 1);
+
+        double low_value = 0.0, high_value = std::numeric_limits<double>::infinity();
+        std::string var_name;
+        if (single_bound)
+        {
+            // check if the first term is a number
+            if (std::find_if(term_1st.begin(), term_1st.end(), ::isalpha) == term_1st.end())
+            {
+                low_value = std::stod(term_1st);
+                var_name = term_3rd;
+            }
+            else
+            {
+                high_value = std::stod(term_3rd);
+                var_name = term_1st;
+            }
+        }
+        else
+        {
+            const auto term_2nd = line.substr(pos1 + 2, pos2 - pos1 - 3);
+            low_value = std::stod(term_1st);
+            high_value = std::stod(term_3rd);
+            var_name = term_2nd;
+        }
+
+        const auto var_id = lp.get_variable_id(var_name);
+
+        if (!utils::is_float_zero(low_value))
+        {
+            lp.var_lbnd[var_id] = low_value;
+        }
+
+        if (high_value < std::numeric_limits<double>::infinity())
+        {
+            lp.var_ubnd[var_id] = high_value;
+            lp.set_has_non_trivial_upper_bounds(true);
+        }
     }
 
     bool parse_impl(const std::string & input, simplex::LinearProgram & lp)
@@ -196,18 +263,23 @@ namespace
                     break;
                 case Constraints:
                     label_and_expr = extract_label_and_expr(line);
-                    strip_spaces(label_and_expr.second);
-                    if (to_lower(label_and_expr.second) == "bounds")
+                    if (as_keyword(label_and_expr.second) == "bounds")
                     {
                         state = Bounds;
+                        break;
                     }
-                    if (to_lower(label_and_expr.second) == "end")
+                    if (as_keyword(label_and_expr.second) == "end")
                     {
                         return true;
                     }
                     add_constraint(label_and_expr.first, label_and_expr.second, lp);
                     break;
                 case Bounds:
+                    if (as_keyword(line) == "end")
+                    {
+                        return true;
+                    }
+                    parse_bounds(line, lp);
                     break;
             }
         }

@@ -4,8 +4,7 @@
 / Solution value = 260.0
 
 Maximize
- obj: 74 x_0 + 29 x_1 + x_2 + 43 x_3 + 39 x_4 + 93 x_5 + 62 x_6 + 42 x_7
-      + 46 x_8 + 93 x_9
+ obj: 74 x_0 + 29 x_1 + x_2 + 43 x_3 + 39 x_4 + 93 x_5 + 62 x_6 + 42 x_7 + 46 x_8 + 93 x_9
 Subject To
  C0: x_0 <= 3
  C1: x_0 + x_1 <= 1

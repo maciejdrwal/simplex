@@ -10,8 +10,8 @@
 #include "Utils.h"
 #include "Logger.h"
 
-#include <iostream>
 #include <map>
+#include <set>
 
 namespace simplex
 {
@@ -83,12 +83,12 @@ namespace simplex
 
     void Presolve::apply_reductions() const
     {
-        for (const auto & constraint : m_lp.constraints)
+        std::set<std::string> redundant;
+        for (auto & [label, constraint] : m_lp.constraints)
         {
-            const auto & data = constraint.second;
             double U = 0.0;
             double L = 0.0;
-            for (const auto & [var_name, a] : data.name_to_coeff)
+            for (const auto & [var_name, a] : constraint.name_to_coeff)
             {
                 // coefficient a_ij * x_i
                 const auto it = m_lp.variable_name_to_id.find(var_name);
@@ -106,18 +106,23 @@ namespace simplex
                     L += a * ub;
                 }
             }
-            LOG(debug) << "Presolve: applying reduction to constraint:" << constraint.first << " L=" << L << " U=" << U;
-            if ((data.type == '<' && U <= data.rhs) ||
-                (data.type == '>' && L >= data.rhs))
+            LOG(debug) << "Presolve: applying reduction to constraint:" << label << " L=" << L << " U=" << U;
+            if ((constraint.type == '<' && U <= constraint.rhs) || (constraint.type == '>' && L >= constraint.rhs))
             {
                 LOG(debug) << "  constraint is redundant";
+                redundant.insert(label);
             }
-            if (((data.type == '<' || data.type == '=') && L > data.rhs) ||
-                ((data.type == '>' || data.type == '=') && U < data.rhs))
+            if (((constraint.type == '<' || constraint.type == '=') && L > constraint.rhs) ||
+                ((constraint.type == '>' || constraint.type == '=') && U < constraint.rhs))
             {
                 LOG(debug) << "  no feasible solution";
                 std::exit(0);
             }
+        }
+
+        for (const auto & label : redundant)
+        {
+            m_lp.constraints.erase(label);
         }
     }
 
@@ -128,18 +133,5 @@ namespace simplex
             apply_reductions();
         }
         eliminate_lbs();
-
-        // Add constraint for upper bound
-        //     for (auto & [var_id, ub] : m_lp.var_ubnd)
-        //     {
-        //         const auto it = m_lp.variable_id_to_name.find(var_id);
-        //         if (it == m_lp.variable_id_to_name.end())
-        //         {
-        //	throw "Presolve: variable not found.";
-        //}
-        //         Constraint constraint('<', ub);
-        //         constraint.add_term(it->second);
-        //         m_lp.constraints.emplace("UB_" + it->second, std::move(constraint));
-        //     }
     }
 }

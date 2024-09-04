@@ -17,8 +17,12 @@ namespace
 
 namespace simplex
 {
-    void Constraint::add_term(std::string_view name, double a)
+    Constraint & Constraint::add_term(std::string_view name, double a)
     {
+        if (utils::is_float_zero(a))
+        {
+            return *this;
+        }
         const auto it = name_to_coeff.find(name.data());
         if (it == name_to_coeff.end())
         {
@@ -28,6 +32,7 @@ namespace simplex
         {
             it->second += a;  // add to existing term
         }
+        return *this;
     }
 
     bool Constraint::has_variable(std::string_view name) const
@@ -39,13 +44,14 @@ namespace simplex
         return it == name_to_coeff.end() ? std::nullopt : std::optional(it->second);
     }
 
-    void Constraint::remove_term(std::string_view name)
+    Constraint & Constraint::remove_term(std::string_view name)
     {
         const auto it = name_to_coeff.find(name.data());
         if (it != name_to_coeff.end())
         {
             name_to_coeff.erase(it);
         }
+        return *this;
     }
 
     void Constraint::negate_sides()
@@ -84,6 +90,12 @@ namespace simplex
                 matrix_A(j, i) = a;
             }
             vector_b[j++] = constraint.rhs;
+        }
+
+        // Prepare the original objective function.
+        for (const auto [i, coeff] : objective_coeff)
+        {
+            vector_c[i] = (sense == 'm') ? coeff : -coeff;
         }
     }
 
@@ -169,6 +181,17 @@ namespace simplex
         return art_var_id;
     }
 
+    void LinearProgram::set_lower_bound(Eigen::Index var_id, double low_value)
+    {
+        var_lbnd[var_id] = low_value;
+    }
+
+    void LinearProgram::set_upper_bound(Eigen::Index var_id, double low_value)
+    {
+        var_ubnd[var_id] = low_value;
+        m_has_UBS = true;
+    }
+
     std::string LinearProgram::get_artificial_variable(int i)
     {
 		return ARTIFICIAL + utils::to_str<int>(i);
@@ -189,6 +212,21 @@ namespace simplex
         }
 
         ub_substitutions[var_id] = !ub_substitutions[var_id];
+    }
+
+    void LinearProgram::add_constraint(const std::string & name, Constraint && constraint)
+    {
+        constraints.emplace(name, std::move(constraint));
+    }
+
+    const Constraint & LinearProgram::get_constraint(const std::string & name) const
+    {
+        const auto it = constraints.find(name);
+        if (it != constraints.end())
+        {
+            return it->second;
+        }
+        throw "Constraint not found: " + name;
     }
 
     // Note: each variable has ID that corresponds to that variable's position

@@ -15,6 +15,8 @@
 
 namespace
 {
+    constexpr double ALMOST_ZERO = 1e-10;
+
     std::chrono::time_point<std::chrono::steady_clock> t_start;
 
     void measure_time_start() { t_start = std::chrono::steady_clock::now(); }
@@ -58,8 +60,9 @@ namespace simplex
             // Solve Phase I LP.
             LOG(debug) << "*** PHASE I ***";
             m_lp.initialize_tableau();
-            // Objective function: sum of artificial variables.
 
+            // Objective function: sum of artificial variables.
+            m_lp.vector_c.setZero();
             for (int i = 0; i < art_var_id; i++)
             {
                 const auto var_name = LinearProgram::get_artificial_variable(i);
@@ -120,12 +123,6 @@ namespace simplex
         {
             m_lp.initialize_tableau();
 
-            // Prepare the original objective function.
-            for (const auto [i, coeff] : m_lp.objective_coeff)
-            {
-                m_lp.vector_c[i] = (m_lp.sense == 'm') ? coeff : -coeff;
-            }
-
             // Solve Phase II LP.
             LOG(debug) << "*** PHASE II ***";
             m_lp.print_tableau();
@@ -135,73 +132,15 @@ namespace simplex
         print_elapsed_time();
     }
 
-    // This function solves a system of linear equations of the form:
-    // A * x = b
-    // The result is stored in _vector_bx, thus enough space must be allocated.
-    // If factorize = true then also the following system is solved:
-    // A^T * y = c
-    // The result is stored in _vector_cy, thus enough space must be allocated.
-    // If factorize = false then _matrix_A must contain LU factors of A on input.
-    void Simplex::lineq_solve(Eigen::MatrixXd & matrix_A, Eigen::VectorXd & vector_bx, Eigen::VectorXd & vector_cy,
-                              bool factorize) const
-    {
-        // int info;
-        // int one_int = 1;
-        // if (ipiv == nullptr) ipiv = new int[M];
-
-        // if (factorize)
-        //{
-        //     // LU factorization: A = P * L * U
-        //     // Arguments: num. of rows, num. of cols., matrix (on exit: LU factors), leading dimension of array,
-        //     pivot indices, info. dgetrf_(&M, &M, _matrix_A, &M, ipiv, &info); if (info != 0)
-        //     {
-        //         // info < 0: argument "-info" has illegal value
-        //         // info > 0: diagonal element at "info" of the factor U from the factorization is exactly 0
-        //         LOG(debug) << "dgetrf_ failed with error code " << static_cast<int>(info);
-        //         std::exit(1);
-        //     }
-
-        //    // Compute: A^T * y = c
-        //    // Arguments: transpose, order of matrix, num. of r.h.sides, LU factors in single matrix (from dgetrf),
-        //    // leading dimension of array, pivot indices from DGETRF, rhs (on exit: the m_solution), leading dimension
-        //    of rhs, info. char transpose = 'T'; dgetrs_(&transpose, &M, &one_int, _matrix_A, &M, ipiv, _vector_cy, &M,
-        //    &info); if (info != 0)
-        //    {
-        //        // info < 0: argument "-info" has illegal value
-        //        LOG(debug) << "dgetrs_ #1 failed with error code " << static_cast<int>(info);
-        //        std::exit(1);
-        //    }
-        //}
-
-        //// Compute: A * x = b
-        // char transpose = 'N';
-        // dgetrs_(&transpose, &M, &one_int, _matrix_A, &M, ipiv, _vector_bx, &M, &info);
-        // if (info != 0)
-        //{
-        //     // info < 0: argument "-info" has illegal value
-        //     LOG(debug) << "dgetrs_ #2 failed with error code " << static_cast<int>(info);
-        //     std::exit(1);
-        // }
-
-        if (factorize)
-        {
-            const Eigen::VectorXd y = matrix_A.transpose().colPivHouseholderQr().solve(vector_cy);
-            vector_cy = y;
-        }
-
-        const Eigen::VectorXd x = matrix_A.colPivHouseholderQr().solve(vector_bx);
-        vector_bx = x;
-    }
-
     // Bland's rule for pivoting.
     // Choose entering index to be lexicographically first with s_j < 0.
-    int Simplex::select_entering_variable_Bland(const Eigen::VectorXd & vector_c_N) const
+    int Simplex::select_entering_variable_Bland(const Eigen::VectorXd & s) const
     {
         const auto M = m_lp.constraints.size();
         const auto N = m_lp.objective_coeff.size();
-        for (int i = 0; i < N - M; i++)
+        for (auto i = 0u; i < N - M; i++)
         {
-            if (vector_c_N[i] < 0.0)
+            if (s[i] < -ALMOST_ZERO)
             {
                 return i;
             }
@@ -212,21 +151,16 @@ namespace simplex
     // Bland's rule for pivoting.
     // Choose leaving index to be lexicographically first with min{ x_i / d_i, d_i > 0 },
     // d = A_B^{-1} * A(entering_index)
-    int Simplex::select_leaving_variable_Bland(Eigen::VectorXd & vector_bx, Eigen::VectorXd & vector_cy,
-                                                     Eigen::MatrixXd & matrix_A_B) const
+    int Simplex::select_leaving_variable_Bland(const Eigen::VectorXd & x, const Eigen::VectorXd & d) const
     {
-        // Solve: A_B * d = A(entering_index). Note that matrix_A_B already contains LU factors.
-        Eigen::VectorXd unused;
-        lineq_solve(matrix_A_B, vector_cy, unused, false);
-
         const auto M = m_lp.constraints.size();
         int min_i = -1;
         double min_lbd = std::numeric_limits<double>::max();
-        for (int i = 0; i < M; i++)
+        for (auto i = 0u; i < M; i++)
         {
-            if (vector_cy[i] > 0.0)
+            if (d[i] > ALMOST_ZERO)
             {
-                const double lbd = vector_bx[i] / vector_cy[i];
+                const double lbd = x[i] / d[i];
                 if (lbd < min_lbd)
                 {
                     min_i = i;
@@ -238,53 +172,47 @@ namespace simplex
     }
 
     // Choose the most negative value among s_j < 0.
-    int Simplex::select_entering_variable_most_neg(const Eigen::VectorXd & vector_c_N) const
+    int Simplex::select_entering_variable_most_neg(const Eigen::VectorXd & s) const
     {
         int min_i = -1;
         double min_value = std::numeric_limits<double>::max();
         const auto M = m_lp.constraints.size();
         const auto N = m_lp.objective_coeff.size();
-        for (int i = 0; i < N - M; i++)
+        for (auto i = 0u; i < N - M; i++)
         {
-            if (vector_c_N[i] < 0.0 && vector_c_N[i] < min_value)
+            if (s[i] < -ALMOST_ZERO && s[i] < min_value)
             {
                 min_i = i;
-                min_value = vector_c_N[i];
+                min_value = s[i];
             }
         }
         return min_i;
     }
 
-    int Simplex::select_leaving_variable(Eigen::VectorXd & vector_bx, Eigen::VectorXd & vector_cy,
-                                         Eigen::MatrixXd & matrix_A_B, const Basis & basis, const Basis & non_basis,
+    int Simplex::select_leaving_variable(const Eigen::VectorXd & x, const Eigen::VectorXd & d,
+                                         const Basis & basis, const Basis & non_basis,
                                          int entering_index) const
     {
         if (m_lp.has_non_trivial_upper_bounds())
         {
-            return select_leaving_variable_SUB(vector_bx, vector_cy, matrix_A_B, basis, non_basis, entering_index);
+            return select_leaving_variable_SUB(x, d, basis, non_basis, entering_index);
         }
-        return select_leaving_variable_Bland(vector_bx, vector_cy, matrix_A_B);
+        return select_leaving_variable_Bland(x, d);
     }
 
     // Simple Upper Bound rule for pivoting.
-    int Simplex::select_leaving_variable_SUB(Eigen::VectorXd & vector_bx, Eigen::VectorXd & vector_cy,
-                                             Eigen::MatrixXd & matrix_A_B, const Basis & basis, const Basis & non_basis,
+    int Simplex::select_leaving_variable_SUB(const Eigen::VectorXd & x, const Eigen::VectorXd & d, const Basis & basis, const Basis & non_basis,
                                              int entering_index) const
     {
-        // Solve: A_B * d = A(entering_index). Note that matrix_A_B already contains LU factors.
-        // Result d is stored in vector_cy.
-        Eigen::VectorXd dummy;
-        lineq_solve(matrix_A_B, vector_cy, dummy, false);
-
         bool need_substitution = false;
         int min_i = -1;
         double min_theta = std::numeric_limits<double>::max();
         const auto M = m_lp.constraints.size();
         for (auto i = 0u; i < M; i++)
         {
-            if (vector_cy[i] > 0.0)
+            if (d[i] > ALMOST_ZERO)
             {
-                double t = vector_bx[i] / vector_cy[i];
+                double t = x[i] / d[i];
                 if (t < min_theta)
                 {
                     min_i = i;
@@ -295,7 +223,7 @@ namespace simplex
 
         for (auto i = 0u; i < M; i++)
         {
-            if (vector_cy[i] < 0.0)
+            if (d[i] < -ALMOST_ZERO)
             {
                 const auto it = m_lp.var_ubnd.find(basis[i]);
                 if (it == m_lp.var_ubnd.end())
@@ -304,7 +232,7 @@ namespace simplex
                 }
 
                 double ub = it->second;
-                double t = (ub - vector_bx[i]) / (-vector_cy[i]);
+                double t = (ub - x[i]) / (-d[i]);
                 if (t < min_theta)
                 {
                     min_i = i;
@@ -338,7 +266,7 @@ namespace simplex
         return min_i;  // perform usual pivot (except if min_i == -1)
     }
 
-    void Simplex::solution_found(Eigen::VectorXd & vector_bx, const Eigen::VectorXd & vector_c_B, const Basis & basis, const Basis & non_basis)
+    void Simplex::solution_found(Eigen::VectorXd vector_bx, const Eigen::VectorXd & vector_c_B, const Basis & basis, const Basis & non_basis)
     {
         double cost = 0.0;
         m_solution.clear();
@@ -422,13 +350,6 @@ namespace simplex
     // arg_basis : on input: initial basis; on result: final basis
     int Simplex::simplex(Basis & arg_basis)
     {
-        std::stringstream ss;
-        for (const auto var : arg_basis)
-        {
-            ss << var << ' ';
-        }
-        LOG(info) << "simplex basis: " << ss.str();
-
         const auto M = m_lp.constraints.size();
         const auto N = m_lp.objective_coeff.size();
 
@@ -455,7 +376,7 @@ namespace simplex
         m_lp.ub_substitutions.assign(N, false);
 
         unsigned long iteration_count = 0L;
-        constexpr unsigned long iteration_limit = 1000000000L;
+        constexpr unsigned long iteration_limit = 100L;  // 1000000000L;
         while (iteration_count < iteration_limit)
         {
             iteration_count++;
@@ -486,22 +407,14 @@ namespace simplex
             LOG(debug) << "c_N=\n" << vector_c_N;
 
             // Compute x = A_B^{-1} * b and y = (A_B^T)^{-1} * c_B
-            Eigen::VectorXd vector_bx = m_lp.vector_b;
-            Eigen::VectorXd vector_cy = vector_c_B;
-            lineq_solve(matrix_A_B, vector_bx, vector_cy);
+            const Eigen::VectorXd x = matrix_A_B.colPivHouseholderQr().solve(m_lp.vector_b);
+            const Eigen::VectorXd y = matrix_A_B.transpose().colPivHouseholderQr().solve(vector_c_B);
 
-            LOG(debug) << "solved x=\n" << vector_bx;
-            LOG(debug) << "solved y=\n" << vector_cy;
+            LOG(debug) << "solved x=\n" << x;
+            LOG(debug) << "solved y=\n" << y;
 
             // Pricing (reduced costs): s = c_N - (A_N)^T * y
-            // Multiply matrix by vector: y = alpha * A * x + beta * y.
-            // Arguments: storage order, transpose, num. of rows, num. of cols., alpha, matrix A, l.d.a. of A, vect. x,
-            // incx, beta, y, incy. NOTE 1: the first argument "storage order" is not in the original CBLAS
-            // specification NOTE 2: the second argument should be 'T' according to the original CBLAS
-            // cblas_dgemv(CblasColMajor, CblasTrans, M, N - M, -1.0, matrix_A_N.get(), M, vector_cy.get(), 1, 1.0,
-            // vector_c_N.get(), 1); Now vector_c_N contains the result s.
-
-            Eigen::VectorXd s = vector_c_N - matrix_A_N.transpose() * vector_cy;
+            Eigen::VectorXd s = vector_c_N - matrix_A_N.transpose() * y;
 
             LOG(debug) << "reduced costs s=\n" << s;
 
@@ -509,17 +422,20 @@ namespace simplex
             const int entering_index = select_entering_variable(s);
             if (entering_index == -1)
             {
-                solution_found(vector_bx, vector_c_B, basis, non_basis);
+                solution_found(x, vector_c_B, basis, non_basis);
                 arg_basis = basis;
                 break;
             }
 
             // Copy the entering column A_q into vector_cy.
-            // std::copy_n(&matrix_A[non_basis[entering_index] * M], M, vector_cy.get());
-            vector_cy = m_lp.matrix_A.col(non_basis[entering_index]);
+            Eigen::VectorXd A_entering = m_lp.matrix_A.col(non_basis[entering_index]);
 
             // 2) Select the leaving variable.
-            const auto leaving_index = select_leaving_variable(vector_bx, vector_cy, matrix_A_B, basis, non_basis, entering_index);
+
+            // Solve: A_B * d = A(entering_index). Note that matrix_A_B already contains LU factors.
+            const Eigen::VectorXd d = matrix_A_B.colPivHouseholderQr().solve(A_entering);
+
+            const auto leaving_index = select_leaving_variable(x, d, basis, non_basis, entering_index);
             if (leaving_index == -1)
             {
                 LOG(debug) << "LP IS UNBOUNDED.\n";
@@ -546,7 +462,7 @@ namespace simplex
     // Write the m_solution to text file.
     void Simplex::write(const std::string & filename) const
     {
-        LOG(debug) << "Writing m_solution...\n";
+        LOG(debug) << "Writing solution...\n";
 
         std::ofstream outfile;
         outfile.open(filename);
@@ -555,9 +471,9 @@ namespace simplex
         outfile << "<?xml version = \"1.0\" encoding=\"UTF-8\" standalone=\"yes\"?>" << '\n';
         outfile << "<TestSolution>\n<header objectiveValue=\"" << m_objective_value << "\"/>" << '\n';
 
-        for (auto it = m_solution.begin(); it != m_solution.end(); it++)
+        for (const auto & [var_name, value] : m_solution)
         {
-            outfile << "<variable name=\"" << it->first.c_str() << "\" value=\"" << it->second << "\"/>" << '\n';
+            outfile << "<variable name=\"" << var_name << "\" value=\"" << value << "\"/>" << '\n';
         }
         outfile << "</TestSolution>" << '\n';
         outfile.close();

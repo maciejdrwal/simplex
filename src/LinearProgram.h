@@ -25,10 +25,10 @@ namespace simplex
 
         Constraint(char _type = '<', double _rhs = 0.0) : type(_type), rhs(_rhs) {}
 
-        void add_term(std::string_view name, double a = 1.0);
+        Constraint & add_term(std::string_view name, double a = 1.0);
         bool has_variable(std::string_view name) const;
         std::optional<double> get_coefficient(std::string_view name) const;
-        void remove_term(std::string_view name);
+        Constraint & remove_term(std::string_view name);
         void negate_sides();
     };
 
@@ -44,18 +44,16 @@ namespace simplex
         friend class Presolve;
         friend class Simplex;
 
-        std::map<std::string, Constraint> constraints;
-        std::map<Eigen::Index, double> objective_coeff;  // maps variable indices x_j to their c_j
-        std::map<Eigen::Index, double> var_lbnd;         // LBs are set to 0 by variable substitutions in presovle
-        std::map<Eigen::Index, double> var_ubnd;         // UBs are modified by presolve
-
-        std::string objective_label;
-
-        Eigen::MatrixXd matrix_A;
-        Eigen::VectorXd vector_b;
-        Eigen::VectorXd vector_c;
-
-        char sense = 'm';  // M=maximize / m=minimize
+        void add_constraint(const std::string & name, Constraint && constraint);
+        [[nodiscard]] const Constraint & get_constraint(const std::string & name) const;
+        Eigen::Index add_variable(const std::string & var_name, double coeff = 0.0);
+        void remove_variable(Eigen::Index var_id);
+        bool has_variable(const std::string & var_name) const;
+        Eigen::Index get_variable_id(const std::string & var_name) const;
+        void set_sense(const char s) { sense = s; }
+        void set_objective_label(const std::string & label) { objective_label = label; }
+        void set_lower_bound(Eigen::Index var_id, double low_value);
+        void set_upper_bound(Eigen::Index var_id, double low_value);
 
         /// @brief Copies the data read by parser into internal data structures.
         void initialize_tableau();
@@ -71,21 +69,27 @@ namespace simplex
         /// @brief Add artificial variables for each equality constraint, and return basis consisting of their indices.
         int add_artificial_variables_for_first_phase(Basis & basis);
 
+        /// @brief Returns the name of i-th artificial variable.
         static std::string get_artificial_variable(int i);
-
-        Eigen::Index add_variable(const std::string & var_name, double coeff = 0.0);
-        void remove_variable(Eigen::Index var_id);
-        bool has_variable(const std::string & var_name) const;
-        Eigen::Index get_variable_id(const std::string & var_name) const;
-        void set_sense(const char s) { sense = s; }
-        void set_objective_label(const std::string & label) { objective_label = label; }
 
         /// @brief Apply upper-bound substitution to a given variable.
         void upper_bound_substitution(Eigen::Index var_id, double ub);
         bool has_non_trivial_upper_bounds() const { return m_has_UBS; }
-        void set_has_non_trivial_upper_bounds(bool b) { m_has_UBS = b; }
 
     private:
+
+        std::map<std::string, Constraint> constraints;
+        std::map<Eigen::Index, double> objective_coeff;  // maps variable indices x_j to their c_j
+        std::map<Eigen::Index, double> var_lbnd;         // LBs are set to 0 by variable substitutions in presovle
+        std::map<Eigen::Index, double> var_ubnd;         // UBs are modified by presolve
+
+        std::string objective_label;
+
+        char sense = 'm';  // M=maximize / m=minimize
+
+        Eigen::MatrixXd matrix_A;
+        Eigen::VectorXd vector_b;
+        Eigen::VectorXd vector_c;
 
         Eigen::Index next_variable_id = 0;
         std::map<std::string, Eigen::Index> variable_name_to_id;

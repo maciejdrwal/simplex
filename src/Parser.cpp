@@ -170,7 +170,7 @@ namespace
             constraint.add_term(var_name, coeff);
         }
 
-        lp.constraints.emplace(label, constraint);
+        lp.add_constraint(label, std::move(constraint));
     }
 
     void parse_bounds(const std::string & line, simplex::LinearProgram & lp)
@@ -210,13 +210,12 @@ namespace
 
         if (!utils::is_float_zero(low_value))
         {
-            lp.var_lbnd[var_id] = low_value;
+            lp.set_lower_bound(var_id, low_value);
         }
 
         if (high_value < std::numeric_limits<double>::infinity())
         {
-            lp.var_ubnd[var_id] = high_value;
-            lp.set_has_non_trivial_upper_bounds(true);
+            lp.set_upper_bound(var_id, high_value);
         }
     }
 

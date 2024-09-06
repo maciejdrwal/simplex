@@ -6,12 +6,12 @@
 ////
 
 #include "Parser.h"
+#include "Utils.h"
+#include "Logger.h"
 
 #include <algorithm>
 #include <locale>
 #include <string>
-
-#include "Utils.h"
 
 namespace
 {
@@ -21,20 +21,71 @@ namespace
         return str;
     }
 
+    std::string strip_chars(std::string line, const std::function<bool(char)> & pred)
+    {
+        line.erase(std::remove_if(line.begin(), line.end(), pred), line.end());
+        return line;
+    }
+
+    std::string strip_spaces(std::string & line)
+    {
+        return strip_chars(line, [](char c) { return isspace(c); });
+    }
+
     std::string parse_line(std::string::const_iterator & iter, std::string::const_iterator end)
     {
         std::string line;
-        while (iter != end)
+        while (line.empty() && iter != end)
         {
-            if (*iter == '\n')
+            while (iter != end)
             {
+                if (*iter == '\n')
+                {
+                    ++iter;
+                    break;
+                }
+                line += *iter;
                 ++iter;
-                break;
             }
-            line += *iter;
-            ++iter;
+            line = strip_spaces(line);
         }
         return line;
+    }
+
+    std::pair<std::string, std::string> parse_line_until(std::string::const_iterator & iter, std::string::const_iterator end, const std::string & tag)
+    {
+        std::string text;
+        while (iter != end)
+        {
+            const auto line = parse_line(iter, end);
+            const auto line_tlsc = to_lower(strip_chars(line, [](char c) { return c == ':'; })); 
+            if (line_tlsc == tag || line_tlsc == "end")
+            {
+                return { text, line_tlsc };
+            }
+            text += line;
+        }
+        return { text, "" };
+    }
+
+    std::pair<std::string, std::string> parse_constraint_line_until(std::string::const_iterator & iter, std::string::const_iterator end, const std::string & tag)
+    {
+        std::string text;
+        while (iter != end)
+        {
+            const auto line = parse_line(iter, end);
+            const auto line_tlsc = to_lower(strip_chars(line, [](char c) { return c == ':'; }));
+            if (line_tlsc == tag || line_tlsc == "end")
+            {
+                return { text, line_tlsc };
+            }
+            text += line;
+            if (line.find_first_of("<=>") != std::string::npos)
+            {
+				break;
+			}
+        }
+        return { text, "" };
     }
 
     void set_sense(std::string line, simplex::LinearProgram & lp)
@@ -54,17 +105,6 @@ namespace
         {
             lp.set_sense('M');
         }
-    }
-
-    std::string strip_chars(std::string & line, const std::function<bool(char)> & pred)
-    {
-        line.erase(std::remove_if(line.begin(), line.end(), pred), line.end());
-        return line;
-    }
-
-    std::string strip_spaces(std::string & line)
-    {
-        return strip_chars(line, [](char c) { return isspace(c); });
     }
 
     std::string as_keyword(const std::string & line)
@@ -225,7 +265,6 @@ namespace
         {
             SetSense,
             Objective,
-            SubjectTo,
             Constraints,
             Bounds
         } state = SetSense;
@@ -236,44 +275,38 @@ namespace
         while (it != end)
         {
             std::pair<std::string, std::string> label_and_expr;
-            std::string line = parse_line(it, end);
-            strip_spaces(line);
-            if (line.empty())
-            {
-                continue;
-            }
+            std::string line, tag;
 
             switch (state)
             {
                 case SetSense:
+                    line = parse_line(it, end);
                     set_sense(line, lp);
                     state = Objective;
                     break;
 
                 case Objective:
+                    std::tie(line, tag) = parse_line_until(it, end, "subjectto");
                     label_and_expr = extract_label_and_expr(line);
                     set_objective(label_and_expr.second, lp);
-                    state = SubjectTo;
-                    break;
-
-                case SubjectTo:
-                    expect_keyword(line, "subjectto");
                     state = Constraints;
                     break;
                 case Constraints:
-                    label_and_expr = extract_label_and_expr(line);
-                    if (as_keyword(label_and_expr.second) == "bounds")
+                    std::tie(line, tag) = parse_constraint_line_until(it, end, "bounds");
+                    if (as_keyword(tag) == "bounds")
                     {
                         state = Bounds;
                         break;
                     }
-                    if (as_keyword(label_and_expr.second) == "end")
+                    if (as_keyword(tag) == "end")
                     {
                         return true;
                     }
+                    label_and_expr = extract_label_and_expr(line);
                     add_constraint(label_and_expr.first, label_and_expr.second, lp);
                     break;
                 case Bounds:
+                    line = parse_line(it, end);
                     if (as_keyword(line) == "end")
                     {
                         return true;
@@ -311,7 +344,10 @@ namespace simplex
 {
     bool run_parser_lp(std::string_view input, LinearProgram & lp)
     {
+        MEASURE_TIME_START(Parser);
         const std::string stripped_input = remove_comments(input);
-        return parse_impl(stripped_input, lp);
+        const auto result = parse_impl(stripped_input, lp);
+        LOG(info) << PRINT_ELAPSED_TIME(Parser);
+        return result;
     }
 }  // namespace simplex

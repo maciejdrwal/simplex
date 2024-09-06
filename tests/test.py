@@ -9,7 +9,7 @@ from utils import *
 SCRIPT_PATH = os.path.dirname(Path(__file__).absolute())
 DATA_DIR = os.path.join(SCRIPT_PATH, "..", "data", "test_set_1")
 EXEC_PATH_UNIX = os.path.join(SCRIPT_PATH, "..", "simplex")
-EXEC_PATH_WIN = os.path.join(SCRIPT_PATH, "..\\build\\Debug",  "simplex.exe")
+EXEC_PATH_WIN = os.path.join(SCRIPT_PATH, "..\\build\\RelWithDebInfo",  "simplex.exe")
 EXEC_PATH = EXEC_PATH_WIN if platform.system()=="Windows" else EXEC_PATH_UNIX
 
 def extract_sol_from_xml(path):

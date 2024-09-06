@@ -97,6 +97,8 @@ namespace simplex
         {
             vector_c[i] = (sense == 'm') ? coeff : -coeff;
         }
+
+        //rescale_matrix();
     }
 
     void LinearProgram::print_tableau() const
@@ -114,7 +116,7 @@ namespace simplex
     {
         int num_of_slack_vars = 0;
         bool all_inequalities = true;
-        for (auto & [_, constraint] : constraints)
+        for (auto & [label, constraint] : constraints)
         {
             if (constraint.type != '=')
             {
@@ -134,7 +136,7 @@ namespace simplex
                 // If all constraints were inequalities then use slacks for initial basis.
                 if (all_inequalities)
                 {
-                    basis.push_back(var_id);
+                    basis.insert(var_id);
                 }
                 LOG(debug) << "added slack variable: " << var_name << " (" << var_id << ")";
             }
@@ -144,10 +146,6 @@ namespace simplex
             }
         }
         LOG(debug) << "added " << num_of_slack_vars << " slack variables, all_inequalities=" << all_inequalities;
-        if (!all_inequalities)
-        {
-            basis.clear();
-        }
         return all_inequalities;
     }
 
@@ -175,9 +173,10 @@ namespace simplex
             const std::string var_name(ARTIFICIAL + utils::to_str<int>(art_var_id++));
             constraint.add_term(var_name, 1.0);
             const auto var_id = add_variable(var_name);
-            basis.push_back(var_id);
+            basis.insert(var_id);
             LOG(debug) << "added artificial variable: " << var_name;
         }
+        LOG(debug) << "added " << art_var_id << " artificial variables";
         return art_var_id;
     }
 
@@ -212,6 +211,25 @@ namespace simplex
         }
 
         ub_substitutions[var_id] = !ub_substitutions[var_id];
+    }
+
+    void LinearProgram::rescale_matrix()
+    {
+        const auto N = matrix_A.rows();
+        m_row_scaling_factors.resize(N);
+        for (auto j = 0u; j < N; j++)
+        {
+            const auto max_a = matrix_A.row(j).maxCoeff();
+            LOG(info) << "max in column " << j << ": " << max_a;
+            m_row_scaling_factors[j] = max_a;
+            if (max_a > 1.0)
+            {
+                matrix_A.row(j) /= max_a;
+                vector_b[j] /= max_a;
+            }
+        }
+
+        LOG(info) << "rescaled A:" << matrix_A;
     }
 
     void LinearProgram::add_constraint(const std::string & name, Constraint && constraint)

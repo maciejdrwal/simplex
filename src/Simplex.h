@@ -36,15 +36,13 @@ namespace simplex
         int select_entering_variable_Bland(const Eigen::VectorXd & s) const;
         int select_entering_variable_most_neg(const Eigen::VectorXd & s) const;
 
-        int select_leaving_variable(const Eigen::VectorXd & x, const Eigen::VectorXd & d,
-                                    const Basis & basis, const Basis & non_basis,
+        int select_leaving_variable(const Eigen::VectorXd & x, const Eigen::VectorXd & d, const Basis & basis,
                                     int entering_index) const;
         int select_leaving_variable_Bland(const Eigen::VectorXd & x, const Eigen::VectorXd & d) const;
         int select_leaving_variable_SUB(const Eigen::VectorXd & x, const Eigen::VectorXd & d, const Basis & basis,
-                                        const Basis & non_basis, int entering_index) const;
+                                        int entering_index) const;
 
-        void solution_found(Eigen::VectorXd vector_bx, const Eigen::VectorXd & vector_c_B, const Basis & basis,
-                            const Basis & non_basis);
+        void solution_found(Eigen::VectorXd vector_bx, const Eigen::VectorXd & vector_c_B, const Basis & basis);
     };
 
 }  // namespace simplex

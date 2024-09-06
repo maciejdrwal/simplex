@@ -7,33 +7,17 @@
 
 #include "Simplex.h"
 #include "Logger.h"
+#include "Utils.h"
 
-#include <chrono>
 #include <csignal>
 #include <fstream>
 #include <sstream>
 
+#include "InitialBasis.h"
+
 namespace
 {
     constexpr double ALMOST_ZERO = 1e-10;
-
-    std::chrono::time_point<std::chrono::steady_clock> t_start;
-
-    void measure_time_start() { t_start = std::chrono::steady_clock::now(); }
-
-    void print_elapsed_time()
-    {
-        auto t_end = std::chrono::steady_clock::now();
-        LOG(debug) << "Elapsed time: "
-                   << static_cast<long>(std::chrono::duration_cast<std::chrono::seconds>(t_end - t_start).count())
-                   << " s ("
-                   << static_cast<long>(std::chrono::duration_cast<std::chrono::milliseconds>(t_end - t_start).count())
-                   << " ms, "
-                   << static_cast<long>(std::chrono::duration_cast<std::chrono::microseconds>(t_end - t_start).count())
-                   << " us, "
-                   << static_cast<long>(std::chrono::duration_cast<std::chrono::nanoseconds>(t_end - t_start).count())
-                   << " ns)";
-    }
 }
 
 namespace simplex
@@ -42,13 +26,11 @@ namespace simplex
     // Initializes internal data structures and runs 2 phases of simplex algorithm.
     void Simplex::solve()
     {
-        measure_time_start();
+        MEASURE_TIME_START(Solver);
 
         Basis init_basis;  // Initial basis.
 
         const bool all_inequalities = m_lp.add_slack_variables_for_inequality_constraints(init_basis);
-
-        // note: number of variables N might have been modified by adding slack variables
 
         if (!all_inequalities)
         {
@@ -68,7 +50,17 @@ namespace simplex
                 const auto var_name = LinearProgram::get_artificial_variable(i);
                 m_lp.vector_c[m_lp.variable_name_to_id[var_name]] = 1.0;
             }
-            m_lp.print_tableau();
+
+            // TODO: filling the non-basic columns (the passed initial basis may contain only the basic indices)
+            for (auto i = 0u; i < m_lp.get_num_vars(); i++)
+            {
+                if (!init_basis.contains(i))
+                {
+                    init_basis.insert_to_non_basic(i);
+                }
+            }
+
+            // m_lp.print_tableau();
             simplex(init_basis);
 
             // Remove artificial variables.
@@ -79,7 +71,7 @@ namespace simplex
                 auto var_id = m_lp.variable_name_to_id[var_name];
 
                 // Check if some artificial variable remained in the basis.
-                if (std::find(init_basis.begin(), init_basis.end(), var_id) != init_basis.end())
+                if (init_basis.contains(var_id))
                 {
                     // TODO: handle this case
 
@@ -101,6 +93,7 @@ namespace simplex
                 constraint.remove_term(var_name);
                 m_lp.remove_variable(var_id);
                 m_lp.variable_name_to_id.erase(var_name);
+                init_basis.remove(var_id);
                 LOG(debug) << "removed artificial variable: " << var_name;
             }
 
@@ -113,6 +106,16 @@ namespace simplex
         else
         {
             LOG(debug) << "Using slacks for initial basis, skipping Phase I.";
+
+            // TODO: filling the non-basic columns (the passed initial basis may contain only the basic indices)
+            for (auto i = 0u; i < m_lp.get_num_vars(); i++)
+            {
+                if (!init_basis.contains(i))
+                {
+                    init_basis.insert_to_non_basic(i);
+                }
+            }
+
         }
 
         if (m_objective_value > 0.0)
@@ -125,11 +128,11 @@ namespace simplex
 
             // Solve Phase II LP.
             LOG(debug) << "*** PHASE II ***";
-            m_lp.print_tableau();
+            //m_lp.print_tableau();
             simplex(init_basis);
         }
 
-        print_elapsed_time();
+        LOG(info) << PRINT_ELAPSED_TIME(Solver);
     }
 
     // Bland's rule for pivoting.
@@ -190,18 +193,18 @@ namespace simplex
     }
 
     int Simplex::select_leaving_variable(const Eigen::VectorXd & x, const Eigen::VectorXd & d,
-                                         const Basis & basis, const Basis & non_basis,
+                                         const Basis & basis,
                                          int entering_index) const
     {
         if (m_lp.has_non_trivial_upper_bounds())
         {
-            return select_leaving_variable_SUB(x, d, basis, non_basis, entering_index);
+            return select_leaving_variable_SUB(x, d, basis, entering_index);
         }
         return select_leaving_variable_Bland(x, d);
     }
 
     // Simple Upper Bound rule for pivoting.
-    int Simplex::select_leaving_variable_SUB(const Eigen::VectorXd & x, const Eigen::VectorXd & d, const Basis & basis, const Basis & non_basis,
+    int Simplex::select_leaving_variable_SUB(const Eigen::VectorXd & x, const Eigen::VectorXd & d, const Basis & basis,
                                              int entering_index) const
     {
         bool need_substitution = false;
@@ -225,10 +228,10 @@ namespace simplex
         {
             if (d[i] < -ALMOST_ZERO)
             {
-                const auto it = m_lp.var_ubnd.find(basis[i]);
+                const auto it = m_lp.var_ubnd.find(basis.get_basic_columns()[i]);
                 if (it == m_lp.var_ubnd.end())
                 {
-                    throw "No upper bound found for basis element: " + std::to_string(basis[i]);
+                    throw "No upper bound found for basis element: " + std::to_string(basis.get_basic_columns()[i]);
                 }
 
                 double ub = it->second;
@@ -242,17 +245,17 @@ namespace simplex
             }
         }
 
-        const auto it = m_lp.var_ubnd.find(non_basis[entering_index]);
+        const auto it = m_lp.var_ubnd.find(basis.get_non_basic_columns()[entering_index]);
         double ub_s = it->second;
 
         if (ub_s < min_theta)
         {
-            m_lp.upper_bound_substitution(non_basis[entering_index], ub_s);
+            m_lp.upper_bound_substitution(basis.get_non_basic_columns()[entering_index], ub_s);
             return -2;  // do not perform pivot
         }
         if (need_substitution)
         {
-            const auto k = basis[min_i];
+            const auto k = basis.get_basic_columns()[min_i];
 
             const auto it1 = m_lp.var_ubnd.find(k);
             if (it1 == m_lp.var_ubnd.end())
@@ -266,14 +269,16 @@ namespace simplex
         return min_i;  // perform usual pivot (except if min_i == -1)
     }
 
-    void Simplex::solution_found(Eigen::VectorXd vector_bx, const Eigen::VectorXd & vector_c_B, const Basis & basis, const Basis & non_basis)
+    void Simplex::solution_found(Eigen::VectorXd vector_bx, const Eigen::VectorXd & vector_c_B, const Basis & basis)
     {
         double cost = 0.0;
         m_solution.clear();
 
-        for (size_t i = 0u; i < basis.size(); ++i)
+        const std::vector<Eigen::Index> basis_columns{ basis.get_basic_columns().begin(),
+                                                       basis.get_basic_columns().end() };
+        for (size_t i = 0u; i < basis_columns.size(); ++i)
         {
-            const auto var_id = basis[i];
+            const auto var_id = basis_columns[i];
             const std::string & var_name = m_lp.variable_id_to_name[var_id];
 
             // Reverse UB-substitution
@@ -297,7 +302,7 @@ namespace simplex
             cost += vector_c_B[i] * vector_bx[i];
         }
 
-        for (auto var_id : non_basis)
+        for (auto var_id : basis.get_non_basic_columns())
         {
             double q = 0.0;
             const std::string & var_name = m_lp.variable_id_to_name[var_id];
@@ -348,94 +353,85 @@ namespace simplex
 
     // The (Revised) Simplex Algorithm.
     // arg_basis : on input: initial basis; on result: final basis
-    int Simplex::simplex(Basis & arg_basis)
+    int Simplex::simplex(Basis & basis)
     {
         const auto M = m_lp.constraints.size();
         const auto N = m_lp.objective_coeff.size();
+
+        if (basis.get_basic_columns().size() != M)
+        {
+            throw "Basis size must be equal to M=" + std::to_string(M);
+        }
 
         Eigen::MatrixXd matrix_A_B(M, M);
         Eigen::MatrixXd matrix_A_N(M, N - M);
         Eigen::VectorXd vector_c_B(M);
         Eigen::VectorXd vector_c_N(N - M);
 
-        Basis basis;
-        Basis non_basis;
-        for (auto i = 0u; i < N; i++)
-        {
-            if (std::find(arg_basis.begin(), arg_basis.end(), i) != arg_basis.end())
-            {
-                basis.push_back(i);
-            }
-            else
-            {
-                non_basis.push_back(i);
-            }
-        }
-
         // Initialize upper-bound substitutions.
         m_lp.ub_substitutions.assign(N, false);
 
         unsigned long iteration_count = 0L;
-        constexpr unsigned long iteration_limit = 100L;  // 1000000000L;
+        constexpr unsigned long iteration_limit = 1000000000L;
         while (iteration_count < iteration_limit)
         {
             iteration_count++;
             LOG(debug) << "SIMPLEX iteration: " << iteration_count;
-            LOG(debug) << "Basis: " << print_basis(basis);
+            //LOG(debug) << "Basis: " << print_basis(basis);
 
             // Split the matrix A into basis matrix (A_B) and non-basis matrix (A_N).
             // TODO: no need to copy whole vectors, as only 1 element has changed in basis.
             // However note that matrix_A, vector_b and vector_c might have changed
             // due to applying upper-bound substitutions.
             int jB = 0, jN = 0;
-            for (auto index : basis)
+            for (auto index : basis.get_basic_columns())
             {
                 matrix_A_B.col(jB) = m_lp.matrix_A.col(index);
                 vector_c_B[jB] = m_lp.vector_c[index];
                 jB++;
             }
-            for (auto index : non_basis)
+            for (auto index : basis.get_non_basic_columns())
             {
                 matrix_A_N.col(jN) = m_lp.matrix_A.col(index);
                 vector_c_N[jN] = m_lp.vector_c[index];
                 jN++;
             }
 
-            LOG(debug) << "A_B=\n" << matrix_A_B;
-            LOG(debug) << "A_N=\n" << matrix_A_N;
-            LOG(debug) << "c_B=\n" << vector_c_B;
-            LOG(debug) << "c_N=\n" << vector_c_N;
+            //LOG(debug) << "A_B=\n" << matrix_A_B;
+            //LOG(debug) << "A_N=\n" << matrix_A_N;
+            //LOG(debug) << "c_B=\n" << vector_c_B;
+            //LOG(debug) << "c_N=\n" << vector_c_N;
 
             // Compute x = A_B^{-1} * b and y = (A_B^T)^{-1} * c_B
-            const Eigen::VectorXd x = matrix_A_B.colPivHouseholderQr().solve(m_lp.vector_b);
-            const Eigen::VectorXd y = matrix_A_B.transpose().colPivHouseholderQr().solve(vector_c_B);
+            Eigen::PartialPivLU<Eigen::Ref<Eigen::MatrixXd> > lu(matrix_A_B);
+            const Eigen::VectorXd x = lu.solve(m_lp.vector_b);
+            const Eigen::VectorXd y = lu.transpose().solve(vector_c_B);
 
-            LOG(debug) << "solved x=\n" << x;
-            LOG(debug) << "solved y=\n" << y;
+            //LOG(debug) << "solved x=\n" << x;
+            //LOG(debug) << "solved y=\n" << y;
 
             // Pricing (reduced costs): s = c_N - (A_N)^T * y
             Eigen::VectorXd s = vector_c_N - matrix_A_N.transpose() * y;
 
-            LOG(debug) << "reduced costs s=\n" << s;
+            //LOG(debug) << "reduced costs s=\n" << s;
 
             // 1) Select the entering variable.
             const int entering_index = select_entering_variable(s);
             if (entering_index == -1)
             {
-                solution_found(x, vector_c_B, basis, non_basis);
-                arg_basis = basis;
+                solution_found(x, vector_c_B, basis);
                 break;
             }
 
             // Copy the entering column A_q into vector_cy.
-            Eigen::VectorXd A_entering = m_lp.matrix_A.col(non_basis[entering_index]);
+            Eigen::VectorXd A_entering = m_lp.matrix_A.col(basis.get_non_basic_columns()[entering_index]);
 
             // 2) Select the leaving variable.
 
             // Solve: A_B * d = A(entering_index). Note that matrix_A_B already contains LU factors.
-            const Eigen::VectorXd d = matrix_A_B.colPivHouseholderQr().solve(A_entering);
+            const Eigen::VectorXd d = lu.solve(A_entering);
 
-            const auto leaving_index = select_leaving_variable(x, d, basis, non_basis, entering_index);
+            const auto leaving_index = select_leaving_variable(x, d, basis, entering_index);
             if (leaving_index == -1)
             {
                 LOG(debug) << "LP IS UNBOUNDED.\n";
@@ -445,9 +441,7 @@ namespace simplex
             if (leaving_index != -2)
             {
                 // Update basis.
-                const auto tmp = basis[leaving_index];
-                basis[leaving_index] = non_basis[entering_index];
-                non_basis[entering_index] = tmp;
+                basis.update(entering_index, leaving_index);
             }
         }
 
@@ -455,7 +449,7 @@ namespace simplex
         {
             throw "MAXIMUM NUMBER OF SIMPLEX ITERATIONS REACHED";
         }
-
+ 
         return 0;
     }
 

@@ -8,12 +8,14 @@
 #ifndef LINEAR_PROGRAM_H
 #define LINEAR_PROGRAM_H
 
-#include <map>
-#include <optional>
-#include <string_view>
-#include <vector>
+#include "Basis.h"
 
 #include "Eigen/Dense"
+
+#include <string_view>
+#include <map>
+#include <optional>
+#include <vector>
 
 namespace simplex
 {
@@ -31,8 +33,6 @@ namespace simplex
         Constraint & remove_term(std::string_view name);
         void negate_sides();
     };
-
-    using Basis = std::vector<Eigen::Index>;
 
     //
     // A standard form LP:
@@ -69,12 +69,18 @@ namespace simplex
         /// @brief Add artificial variables for each equality constraint, and return basis consisting of their indices.
         int add_artificial_variables_for_first_phase(Basis & basis);
 
+        size_t get_num_vars() const { return variable_name_to_id.size(); }
+
         /// @brief Returns the name of i-th artificial variable.
         static std::string get_artificial_variable(int i);
 
         /// @brief Apply upper-bound substitution to a given variable.
         void upper_bound_substitution(Eigen::Index var_id, double ub);
         bool has_non_trivial_upper_bounds() const { return m_has_UBS; }
+
+        /// @brief
+        void rescale_matrix();
+        void scale_back_matrix();
 
     private:
 
@@ -96,6 +102,8 @@ namespace simplex
         std::map<Eigen::Index, std::string> variable_id_to_name;
 
         std::vector<bool> ub_substitutions;
+        std::vector<double> m_column_scaling_factors;
+        std::vector<double> m_row_scaling_factors;
 
         double obj_value_shift = 0.0;  // constant term in objective function
         std::map<Eigen::Index, double> var_shifts;

@@ -21,6 +21,7 @@ namespace simplex
 
         void solve();
         void write(const std::string & filename) const;
+        int simplex(Basis & arg_basis);
 
     private:
 
@@ -29,8 +30,6 @@ namespace simplex
         std::map<std::string, double> m_solution;
 
         double m_objective_value = 0.0;
-
-        int simplex(Basis & arg_basis);
 
         int select_entering_variable(const Eigen::VectorXd & s) const;
         int select_entering_variable_Bland(const Eigen::VectorXd & s) const;

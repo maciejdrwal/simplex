@@ -68,8 +68,8 @@ namespace simplex
     // other problem transformations.
     void LinearProgram::initialize_tableau()
     {
-        const auto M = constraints.size();
-        const auto N = objective_coeff.size();
+        const auto M = get_num_rows();
+        const auto N = get_num_vars();
 
         LOG(debug) << "problem size: N=" << N << ", M=" << M;
 
@@ -98,7 +98,7 @@ namespace simplex
             vector_c[i] = (sense == 'm') ? coeff : -coeff;
         }
 
-        //rescale_matrix();
+        rescale_matrix();
     }
 
     void LinearProgram::print_tableau() const
@@ -112,7 +112,7 @@ namespace simplex
     }
 
 
-    bool LinearProgram::add_slack_variables_for_inequality_constraints(Basis & basis)
+    void LinearProgram::add_slack_variables_for_inequality_constraints()
     {
         int num_of_slack_vars = 0;
         bool all_inequalities = true;
@@ -128,16 +128,11 @@ namespace simplex
                 if (constraint.type == '>')
                 {
                     constraint.add_term(var_name, -1.0);
-                    all_inequalities = false;
                 }
                 constraint.type = '=';
                 const auto var_id = add_variable(var_name);
+                m_slacks[label] = var_id;
 
-                // If all constraints were inequalities then use slacks for initial basis.
-                if (all_inequalities)
-                {
-                    basis.insert(var_id);
-                }
                 LOG(debug) << "added slack variable: " << var_name << " (" << var_id << ")";
             }
             else
@@ -146,14 +141,13 @@ namespace simplex
             }
         }
         LOG(debug) << "added " << num_of_slack_vars << " slack variables, all_inequalities=" << all_inequalities;
-        return all_inequalities;
     }
 
     int LinearProgram::add_artificial_variables_for_first_phase(Basis & basis)
     {
         int art_var_id = 0;
-        LOG(debug) << "Not all constrains are inequalities A <= b, adding artificial variables.";
-        for (auto & [_, constraint] : constraints)
+        //LOG(debug) << "Not all constrains are inequalities A <= b, adding artificial variables.";
+        for (auto & [label, constraint] : constraints)
         {
             // Note: at this point there should be no inequality constraints
             if (constraint.type == '<' || constraint.type == '>')
@@ -161,20 +155,27 @@ namespace simplex
                 throw "All constraints must be equality at this point.";
             }
 
-            if (constraint.rhs < 0.0)
+            const auto it = m_slacks.find(label);
+            double a = -1.0;
+            if (it != m_slacks.end())
             {
-                constraint.rhs *= -1.0;
-
-                for (auto & [_, a] : constraint.name_to_coeff)
-                {
-                    a *= -1;
-                }
+                const auto & var_name = variable_id_to_name[it->second];
+                const auto a = constraint.get_coefficient(var_name).value_or(-1.0);
+                LOG(debug) << "slack var " << var_name << " coeff=" << a;
             }
-            const std::string var_name(ARTIFICIAL + utils::to_str<int>(art_var_id++));
-            constraint.add_term(var_name, 1.0);
-            const auto var_id = add_variable(var_name);
-            basis.insert(var_id);
-            LOG(debug) << "added artificial variable: " << var_name;
+            if (a > 0)
+            {
+                basis.insert(it->second);
+            }
+            else
+            {
+                const std::string var_name(ARTIFICIAL + utils::to_str<int>(art_var_id++));
+                constraint.add_term(var_name, 1.0);
+                const auto var_id = add_variable(var_name);
+                basis.insert(var_id);
+                m_artificials[label] = var_id;
+                LOG(debug) << "added artificial variable: " << var_name;
+            }
         }
         LOG(debug) << "added " << art_var_id << " artificial variables";
         return art_var_id;
@@ -219,8 +220,7 @@ namespace simplex
         m_row_scaling_factors.resize(N);
         for (auto j = 0u; j < N; j++)
         {
-            const auto max_a = matrix_A.row(j).maxCoeff();
-            LOG(info) << "max in column " << j << ": " << max_a;
+            const auto max_a = matrix_A.row(j).cwiseAbs().maxCoeff();
             m_row_scaling_factors[j] = max_a;
             if (max_a > 1.0)
             {
@@ -229,7 +229,15 @@ namespace simplex
             }
         }
 
-        LOG(info) << "rescaled A:" << matrix_A;
+        const auto M = matrix_A.cols();
+        m_column_scaling_factors.resize(M);
+        for (auto j = 0u; j < M; j++)
+        {
+            const auto max_a = matrix_A.col(j).cwiseAbs().maxCoeff();
+            m_column_scaling_factors[j] = max_a;
+            matrix_A.col(j) /= max_a;
+            vector_c[j] /= max_a;
+        }
     }
 
     void LinearProgram::add_constraint(const std::string & name, Constraint && constraint)
@@ -249,9 +257,7 @@ namespace simplex
 
     // Note: each variable has ID that corresponds to that variable's position
     // in the computation array vector_c, and is also used, e.g., to
-    // indicate basic/non-basic variables. Thus it is currently not allowed
-    // to add variables after removing some other variables.
-    // TODO: change this in order to allow problem manipulation after solving.
+    // indicate basic/non-basic variables. 
     ///@param var_name - name of the new variable
     ///@param coeff - the coefficient of the variable in the objective function
     ///@return the index of the new variable

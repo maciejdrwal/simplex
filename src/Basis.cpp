@@ -10,15 +10,6 @@
 
 namespace simplex
 {
-    //Basis::Basis(size_t N)
-    //{
-    //    m_non_basic_cols.reserve(N);
-    //    for (size_t i = 0; i < N; ++i)
-    //    {
-    //        m_non_basic_cols.push_back(i);
-    //    }
-    //}
-
     void Basis::insert(Eigen::Index var_id)
     {
         m_basic_cols.push_back(var_id);
@@ -63,5 +54,15 @@ namespace simplex
 
         LOG(debug) << "leaving basis: " << leaving_col << " (" << leaving_index
                        << "), entering basis: " << entering_col << " (" << entering_index << ")";
+    }
+
+    std::string Basis::show() const
+    {
+        std::string result;
+        for (const auto & col : m_basic_cols)
+        {
+            result += std::to_string(col) + " ";
+        }
+        return result;
     }
 }

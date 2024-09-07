@@ -11,6 +11,7 @@
 #include "Eigen/Dense"
 
 #include <vector>
+#include <string>
 
 namespace simplex
 {
@@ -25,6 +26,7 @@ namespace simplex
         void clear();
         bool contains(Eigen::Index var_id) const;
         void update(Eigen::Index entering_index, Eigen::Index leaving_index);
+        std::string show() const;
 
     private:
         std::vector<Eigen::Index> m_basic_cols;

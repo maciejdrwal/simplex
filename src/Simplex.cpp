@@ -17,7 +17,7 @@
 
 namespace
 {
-    constexpr double ALMOST_ZERO = 1e-10;
+    constexpr double ALMOST_ZERO = 1e-7;
 }
 
 namespace simplex
@@ -28,95 +28,9 @@ namespace simplex
     {
         MEASURE_TIME_START(Solver);
 
-        Basis init_basis;  // Initial basis.
+        InitialBasis basis_initializer(m_lp, *this);
 
-        const bool all_inequalities = m_lp.add_slack_variables_for_inequality_constraints(init_basis);
-
-        if (!all_inequalities)
-        {
-            // Construct artificial variables for Phase I.
-            const auto art_var_id = m_lp.add_artificial_variables_for_first_phase(init_basis);
-
-            // note: number of variables N has changed after adding artificial variables
-
-            // Solve Phase I LP.
-            LOG(debug) << "*** PHASE I ***";
-            m_lp.initialize_tableau();
-
-            // Objective function: sum of artificial variables.
-            m_lp.vector_c.setZero();
-            for (int i = 0; i < art_var_id; i++)
-            {
-                const auto var_name = LinearProgram::get_artificial_variable(i);
-                m_lp.vector_c[m_lp.variable_name_to_id[var_name]] = 1.0;
-            }
-
-            // TODO: filling the non-basic columns (the passed initial basis may contain only the basic indices)
-            for (auto i = 0u; i < m_lp.get_num_vars(); i++)
-            {
-                if (!init_basis.contains(i))
-                {
-                    init_basis.insert_to_non_basic(i);
-                }
-            }
-
-            // m_lp.print_tableau();
-            simplex(init_basis);
-
-            // Remove artificial variables.
-            int i = 0;
-            for (auto & [_, constraint] : m_lp.constraints)
-            {
-                const auto var_name = LinearProgram::get_artificial_variable(i++);
-                auto var_id = m_lp.variable_name_to_id[var_name];
-
-                // Check if some artificial variable remained in the basis.
-                if (init_basis.contains(var_id))
-                {
-                    // TODO: handle this case
-
-                    // init_basis.erase(var_name);
-                    // for (map<string, int>::iterator jt = variable_name_to_id.begin(); jt !=
-                    // variable_name_to_id.end(); ++jt) {
-                    //     if (init_basis.count(jt->second) == 0 && (strncmp(jt->first.c_str(), ARTIFICIAL, 12) != 0)) {
-                    //         init_basis.insert(jt->second);
-                    //         printf("replaced variable %d (%s) by %d (%s) in the basis\n",  var_id, var_name.c_str(),
-                    //         jt->second, jt->first.c_str()); break;
-                    //     }
-                    // }
-
-                    std::stringstream msg;
-                    msg << "Artificial variable " << var_name << " in the basis.";
-                    throw msg.str().c_str();
-                }
-
-                constraint.remove_term(var_name);
-                m_lp.remove_variable(var_id);
-                m_lp.variable_name_to_id.erase(var_name);
-                init_basis.remove(var_id);
-                LOG(debug) << "removed artificial variable: " << var_name;
-            }
-
-            // note: number of variables N has changed after removing artificial variables
-
-            m_lp.vector_b.setZero();
-            m_lp.vector_c.setZero();
-            m_lp.matrix_A.setZero();
-        }
-        else
-        {
-            LOG(debug) << "Using slacks for initial basis, skipping Phase I.";
-
-            // TODO: filling the non-basic columns (the passed initial basis may contain only the basic indices)
-            for (auto i = 0u; i < m_lp.get_num_vars(); i++)
-            {
-                if (!init_basis.contains(i))
-                {
-                    init_basis.insert_to_non_basic(i);
-                }
-            }
-
-        }
+        Basis init_basis = basis_initializer.get_basis();
 
         if (m_objective_value > 0.0)
         {
@@ -128,6 +42,7 @@ namespace simplex
 
             // Solve Phase II LP.
             LOG(debug) << "*** PHASE II ***";
+
             //m_lp.print_tableau();
             simplex(init_basis);
         }
@@ -139,8 +54,8 @@ namespace simplex
     // Choose entering index to be lexicographically first with s_j < 0.
     int Simplex::select_entering_variable_Bland(const Eigen::VectorXd & s) const
     {
-        const auto M = m_lp.constraints.size();
-        const auto N = m_lp.objective_coeff.size();
+        const auto M = m_lp.get_num_rows();
+        const auto N = m_lp.get_num_vars();
         for (auto i = 0u; i < N - M; i++)
         {
             if (s[i] < -ALMOST_ZERO)
@@ -156,7 +71,7 @@ namespace simplex
     // d = A_B^{-1} * A(entering_index)
     int Simplex::select_leaving_variable_Bland(const Eigen::VectorXd & x, const Eigen::VectorXd & d) const
     {
-        const auto M = m_lp.constraints.size();
+        const auto M = m_lp.get_num_rows();
         int min_i = -1;
         double min_lbd = std::numeric_limits<double>::max();
         for (auto i = 0u; i < M; i++)
@@ -179,8 +94,8 @@ namespace simplex
     {
         int min_i = -1;
         double min_value = std::numeric_limits<double>::max();
-        const auto M = m_lp.constraints.size();
-        const auto N = m_lp.objective_coeff.size();
+        const auto M = m_lp.get_num_rows();
+        const auto N = m_lp.get_num_vars();
         for (auto i = 0u; i < N - M; i++)
         {
             if (s[i] < -ALMOST_ZERO && s[i] < min_value)
@@ -335,16 +250,6 @@ namespace simplex
         LOG(debug) << "OPTIMAL X FOUND.\nValue = " << m_objective_value;
     }
 
-    std::string print_basis(const std::vector<Eigen::Index> & basis)
-    {
-        std::stringstream ss;
-        for (auto i : basis)
-        {
-            ss << i << ' ';
-        }
-        return ss.str();
-    }
-
     int Simplex::select_entering_variable(const Eigen::VectorXd & s) const
     {
         return select_entering_variable_Bland(s);
@@ -355,8 +260,8 @@ namespace simplex
     // arg_basis : on input: initial basis; on result: final basis
     int Simplex::simplex(Basis & basis)
     {
-        const auto M = m_lp.constraints.size();
-        const auto N = m_lp.objective_coeff.size();
+        const auto M = m_lp.get_num_rows();
+        const auto N = m_lp.get_num_vars();
 
         if (basis.get_basic_columns().size() != M)
         {
@@ -377,7 +282,7 @@ namespace simplex
         {
             iteration_count++;
             LOG(debug) << "SIMPLEX iteration: " << iteration_count;
-            //LOG(debug) << "Basis: " << print_basis(basis);
+            LOG(debug) << "Basis: " << basis.show();
 
             // Split the matrix A into basis matrix (A_B) and non-basis matrix (A_N).
             // TODO: no need to copy whole vectors, as only 1 element has changed in basis.

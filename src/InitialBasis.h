@@ -16,13 +16,14 @@ namespace simplex
     class InitialBasis
     {
     public:
-        InitialBasis(LinearProgram & lp) : m_lp(lp) {}
+        InitialBasis(LinearProgram & lp, Simplex & simplex) : m_lp(lp), m_simplex(simplex) {}
 
-        Basis get_basis();
+        Basis get_basis() const;
 
     private:
 
         LinearProgram & m_lp;
+        Simplex & m_simplex;
     };
 }  // namespace simplex
 

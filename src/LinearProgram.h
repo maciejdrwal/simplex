@@ -42,6 +42,7 @@ namespace simplex
     struct LinearProgram
     {
         friend class Presolve;
+        friend class InitialBasis;
         friend class Simplex;
 
         void add_constraint(const std::string & name, Constraint && constraint);
@@ -64,12 +65,13 @@ namespace simplex
         /// @brief Add slack variables to inequality constraints, replacing them with equality.
         ///        The added slack variables are inserted into the basis.
         /// @return true if all the problem's constraints are inequalities
-        bool add_slack_variables_for_inequality_constraints(Basis & basis);
+        void add_slack_variables_for_inequality_constraints();
 
         /// @brief Add artificial variables for each equality constraint, and return basis consisting of their indices.
         int add_artificial_variables_for_first_phase(Basis & basis);
 
         size_t get_num_vars() const { return variable_name_to_id.size(); }
+        size_t get_num_rows() const { return constraints.size(); }
 
         /// @brief Returns the name of i-th artificial variable.
         static std::string get_artificial_variable(int i);
@@ -78,9 +80,9 @@ namespace simplex
         void upper_bound_substitution(Eigen::Index var_id, double ub);
         bool has_non_trivial_upper_bounds() const { return m_has_UBS; }
 
-        /// @brief
+        /// @brief Performs scaling of the matrix A and the vectors b and c.
+        ///        Note that the original problem data in constraints and objective_coeff is not affected.
         void rescale_matrix();
-        void scale_back_matrix();
 
     private:
 
@@ -104,6 +106,8 @@ namespace simplex
         std::vector<bool> ub_substitutions;
         std::vector<double> m_column_scaling_factors;
         std::vector<double> m_row_scaling_factors;
+        std::map<std::string, Eigen::Index> m_slacks;
+        std::map<std::string, Eigen::Index> m_artificials;
 
         double obj_value_shift = 0.0;  // constant term in objective function
         std::map<Eigen::Index, double> var_shifts;

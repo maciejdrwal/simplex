@@ -177,23 +177,28 @@ namespace
 
     void add_constraint(const std::string & label, const std::string & expr, simplex::LinearProgram & lp)
     {
-        auto tokens = tokenize_expr(expr);
+        auto pos = expr.find_first_of("<=>");
+        const auto sign = expr.at(pos);
+        if (pos == std::string::npos)
+        {
+            throw "Invalid constraint expression: " + expr.back();
+        }
+        const auto lhs = expr.substr(0, pos);
+        while (!isdigit(expr.at(pos + 1)) && expr.at(pos + 1) != '-')
+        {
+            ++pos;
+        }
+        const auto rhs = expr.substr(pos + 1);
+
+        auto tokens = tokenize_expr(lhs);
         if (tokens.empty())
         {
             throw "Empty constraint expression";
         }
 
-        auto pos = tokens.back().find_first_of("<=>");
-        const auto sign = tokens.back().at(pos);
-        if (pos == std::string::npos)
-        {
-            throw "Invalid constraint expression: " + tokens.back();
-        }
-        while (!isdigit(tokens.back().at(pos + 1))) { ++pos; }
-        const auto rhs = tokens.back().substr(pos + 1);
         simplex::Constraint constraint(sign, stod(rhs));
 
-        tokens.back() = tokens.back().substr(0, tokens.back().find(sign));  // note: this invalidates pos
+        //tokens.back() = tokens.back().substr(0, tokens.back().find(sign));  // note: this invalidates pos
 
         for (const auto & token : tokens)
         {

@@ -10,6 +10,7 @@
 
 #include "LinearProgram.h"
 #include "Basis.h"
+#include "Simplex.h"
 
 namespace simplex
 {
@@ -18,12 +19,21 @@ namespace simplex
     public:
         InitialBasis(LinearProgram & lp, Simplex & simplex) : m_lp(lp), m_simplex(simplex) {}
 
-        Basis get_basis() const;
+        Basis get_basis();
 
     private:
 
         LinearProgram & m_lp;
         Simplex & m_simplex;
+        std::map<std::string, Eigen::Index> m_artificials;
+
+        /// @brief Add artificial variables for each equality constraint and create an initial basis.
+        ///        The problem must have only equality constraints at this point.
+        ///        Available slack variables will be used instead of artificial variables when possible.
+        /// @param basis The initial basis consisting of slack and/or artificial variables.
+        /// @return Number of artificial variables added.
+        size_t add_artificial_variables_for_initial_basis(Basis & basis);
+
     };
 }  // namespace simplex
 

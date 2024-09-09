@@ -9,6 +9,7 @@
 #define SIMPLEX_H
 
 #include "LinearProgram.h"
+#include "Basis.h"
 
 #include <map>
 

@@ -181,7 +181,7 @@ namespace
         const auto sign = expr.at(pos);
         if (pos == std::string::npos)
         {
-            throw "Invalid constraint expression: " + expr.back();
+            throw "Invalid constraint expression: " + expr;
         }
         const auto lhs = expr.substr(0, pos);
         while (!isdigit(expr.at(pos + 1)) && expr.at(pos + 1) != '-')

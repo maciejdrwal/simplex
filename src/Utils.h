@@ -6,6 +6,8 @@
 
 namespace utils
 {
+    constexpr double ALMOST_ZERO = 1e-7;
+
     struct Stopwatch
     {
         std::chrono::time_point<std::chrono::steady_clock> t_start;
@@ -31,15 +33,13 @@ namespace utils
     template <class T>
     bool is_float_zero(T x)
     {
-        return abs(x) < 1e-9 ? true : false;
+        return abs(x) < ALMOST_ZERO ? true : false;
     }
 
     template <class T>
-    std::string to_str(T i)
+    bool float_equal(T x, T y)
     {
-        std::stringstream ss;
-        ss << i;
-        return ss.str();
+        return is_float_zero(x - y);
     }
 }
 

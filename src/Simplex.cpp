@@ -15,11 +15,6 @@
 
 #include "InitialBasis.h"
 
-namespace
-{
-    constexpr double ALMOST_ZERO = 1e-7;
-}
-
 namespace simplex
 {
     // The main procedure of the solver.
@@ -29,7 +24,6 @@ namespace simplex
         MEASURE_TIME_START(Solver);
 
         InitialBasis basis_initializer(m_lp, *this);
-
         Basis init_basis = basis_initializer.get_basis();
 
         if (m_objective_value > 0.0)
@@ -58,7 +52,7 @@ namespace simplex
         const auto N = m_lp.get_num_vars();
         for (auto i = 0u; i < N - M; i++)
         {
-            if (s[i] < -ALMOST_ZERO)
+            if (s[i] < -utils::ALMOST_ZERO)
             {
                 return i;
             }
@@ -76,7 +70,7 @@ namespace simplex
         double min_lbd = std::numeric_limits<double>::max();
         for (auto i = 0u; i < M; i++)
         {
-            if (d[i] > ALMOST_ZERO)
+            if (d[i] > utils::ALMOST_ZERO)
             {
                 const double lbd = x[i] / d[i];
                 if (lbd < min_lbd)
@@ -98,7 +92,7 @@ namespace simplex
         const auto N = m_lp.get_num_vars();
         for (auto i = 0u; i < N - M; i++)
         {
-            if (s[i] < -ALMOST_ZERO && s[i] < min_value)
+            if (s[i] < -utils::ALMOST_ZERO && s[i] < min_value)
             {
                 min_i = i;
                 min_value = s[i];
@@ -128,7 +122,7 @@ namespace simplex
         const auto M = m_lp.constraints.size();
         for (auto i = 0u; i < M; i++)
         {
-            if (d[i] > ALMOST_ZERO)
+            if (d[i] > utils::ALMOST_ZERO)
             {
                 double t = x[i] / d[i];
                 if (t < min_theta)
@@ -141,7 +135,7 @@ namespace simplex
 
         for (auto i = 0u; i < M; i++)
         {
-            if (d[i] < -ALMOST_ZERO)
+            if (d[i] < -utils::ALMOST_ZERO)
             {
                 const auto it = m_lp.var_ubnd.find(basis.get_basic_columns()[i]);
                 if (it == m_lp.var_ubnd.end())
@@ -256,7 +250,7 @@ namespace simplex
         // return select_entering_variable_most_neg(s);
     }
 
-    // The (Revised) Simplex Algorithm.
+    // The (Revised) Bounded Variable Simplex Algorithm.
     // arg_basis : on input: initial basis; on result: final basis
     int Simplex::simplex(Basis & basis)
     {
@@ -357,6 +351,7 @@ namespace simplex
  
         return 0;
     }
+
 
     // Write the m_solution to text file.
     void Simplex::write(const std::string & filename) const

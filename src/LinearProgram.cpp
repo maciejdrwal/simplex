@@ -10,11 +10,6 @@
 #include "Logger.h"
 #include "Utils.h"
 
-namespace
-{
-    const std::string ARTIFICIAL = "_ARTIFICIAL_";
-}
-
 namespace simplex
 {
     Constraint & Constraint::add_term(std::string_view name, double a)
@@ -112,22 +107,23 @@ namespace simplex
     }
 
 
-    void LinearProgram::add_slack_variables_for_inequality_constraints()
+    size_t LinearProgram::add_slack_variables_for_inequality_constraints()
     {
-        int num_of_slack_vars = 0;
+        size_t num_of_slack_vars = 0;
         bool all_inequalities = true;
         for (auto & [label, constraint] : constraints)
         {
             if (constraint.type != '=')
             {
-                const std::string var_name("__SLACK" + utils::to_str<int>(num_of_slack_vars++));
+                const std::string var_name("__SLACK" + std::to_string(num_of_slack_vars++));
                 if (constraint.type == '<')
                 {
                     constraint.add_term(var_name);
                 }
                 if (constraint.type == '>')
                 {
-                    constraint.add_term(var_name, -1.0);
+                    constraint.negate_sides();
+                    constraint.add_term(var_name);
                 }
                 constraint.type = '=';
                 const auto var_id = add_variable(var_name);
@@ -141,44 +137,7 @@ namespace simplex
             }
         }
         LOG(debug) << "added " << num_of_slack_vars << " slack variables, all_inequalities=" << all_inequalities;
-    }
-
-    int LinearProgram::add_artificial_variables_for_first_phase(Basis & basis)
-    {
-        int art_var_id = 0;
-        //LOG(debug) << "Not all constrains are inequalities A <= b, adding artificial variables.";
-        for (auto & [label, constraint] : constraints)
-        {
-            // Note: at this point there should be no inequality constraints
-            if (constraint.type == '<' || constraint.type == '>')
-            {
-                throw "All constraints must be equality at this point.";
-            }
-
-            const auto it = m_slacks.find(label);
-            double a = -1.0;
-            if (it != m_slacks.end())
-            {
-                const auto & var_name = variable_id_to_name[it->second];
-                const auto a = constraint.get_coefficient(var_name).value_or(-1.0);
-                LOG(debug) << "slack var " << var_name << " coeff=" << a;
-            }
-            if (a > 0)
-            {
-                basis.insert(it->second);
-            }
-            else
-            {
-                const std::string var_name(ARTIFICIAL + utils::to_str<int>(art_var_id++));
-                constraint.add_term(var_name, 1.0);
-                const auto var_id = add_variable(var_name);
-                basis.insert(var_id);
-                m_artificials[label] = var_id;
-                LOG(debug) << "added artificial variable: " << var_name;
-            }
-        }
-        LOG(debug) << "added " << art_var_id << " artificial variables";
-        return art_var_id;
+        return num_of_slack_vars;
     }
 
     void LinearProgram::set_lower_bound(Eigen::Index var_id, double low_value)
@@ -190,11 +149,6 @@ namespace simplex
     {
         var_ubnd[var_id] = low_value;
         m_has_UBS = true;
-    }
-
-    std::string LinearProgram::get_artificial_variable(int i)
-    {
-		return ARTIFICIAL + utils::to_str<int>(i);
     }
 
     void LinearProgram::upper_bound_substitution(Eigen::Index var_id, double ub)

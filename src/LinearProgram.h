@@ -8,8 +8,6 @@
 #ifndef LINEAR_PROGRAM_H
 #define LINEAR_PROGRAM_H
 
-#include "Basis.h"
-
 #include "Eigen/Dense"
 
 #include <string_view>
@@ -63,18 +61,11 @@ namespace simplex
         void print_tableau() const;
 
         /// @brief Add slack variables to inequality constraints, replacing them with equality.
-        ///        The added slack variables are inserted into the basis.
-        /// @return true if all the problem's constraints are inequalities
-        void add_slack_variables_for_inequality_constraints();
-
-        /// @brief Add artificial variables for each equality constraint, and return basis consisting of their indices.
-        int add_artificial_variables_for_first_phase(Basis & basis);
+        /// @return Number of slack variables added.
+        size_t add_slack_variables_for_inequality_constraints();
 
         size_t get_num_vars() const { return variable_name_to_id.size(); }
         size_t get_num_rows() const { return constraints.size(); }
-
-        /// @brief Returns the name of i-th artificial variable.
-        static std::string get_artificial_variable(int i);
 
         /// @brief Apply upper-bound substitution to a given variable.
         void upper_bound_substitution(Eigen::Index var_id, double ub);
@@ -107,7 +98,6 @@ namespace simplex
         std::vector<double> m_column_scaling_factors;
         std::vector<double> m_row_scaling_factors;
         std::map<std::string, Eigen::Index> m_slacks;
-        std::map<std::string, Eigen::Index> m_artificials;
 
         double obj_value_shift = 0.0;  // constant term in objective function
         std::map<Eigen::Index, double> var_shifts;

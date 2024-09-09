@@ -1,52 +1,91 @@
 
 #include "InitialBasis.h"
-#include "Simplex.h"
 #include "Logger.h"
+
+namespace
+{
+    const std::string ARTIFICIAL = "_ARTIFICIAL_";
+
+    void fill_non_basic_variables(simplex::Basis & basis, const simplex::LinearProgram & lp)
+    {
+        for (auto i = 0u; i < lp.get_num_vars(); i++)
+        {
+            if (!basis.contains(i))
+            {
+                basis.insert_to_non_basic(i);
+            }
+        }
+    }
+}
 
 namespace simplex
 {
-    Basis InitialBasis::get_basis() const
+    size_t InitialBasis::add_artificial_variables_for_initial_basis(Basis & basis)
+    {
+        int art_var_id = 0;
+        for (auto & [label, constraint] : m_lp.constraints)
+        {
+            // Note: at this point there should be no inequality constraints
+            if (constraint.type == '<' || constraint.type == '>')
+            {
+                throw "All constraints must be equality at this point.";
+            }
+
+            const auto rhs = constraint.rhs;
+
+            const auto it = m_lp.m_slacks.find(label);
+            if (it != m_lp.m_slacks.end() && rhs >= 0.0)
+            {
+                // Slack is available for this constraint, but can be used only if the right-hand side is nonnegative.
+                basis.insert(it->second);
+            }
+            else
+            {
+                // Artificial variable is introduced with negative sign if the right-hand side is negative.
+                const std::string var_name(ARTIFICIAL + std::to_string(art_var_id++));
+                constraint.add_term(var_name, rhs >= 0.0 ? 1.0 : -1.0);
+                const auto var_id = m_lp.add_variable(var_name);
+                basis.insert(var_id);
+                m_artificials[label] = var_id;
+                LOG(debug) << "added artificial variable: " << var_name;
+            }
+        }
+        LOG(debug) << "added " << art_var_id << " artificial variables";
+        return art_var_id;
+    }
+
+    Basis InitialBasis::get_basis()
     {
         Basis init_basis;
 
         m_lp.add_slack_variables_for_inequality_constraints();
 
         // Construct artificial variables for Phase I.
-        const auto art_var_id = m_lp.add_artificial_variables_for_first_phase(init_basis);
+        const auto art_var_id = add_artificial_variables_for_initial_basis(init_basis);
 
         if (art_var_id > 0)
         {
-            // note: number of variables N has changed after adding artificial variables
-
             // Solve Phase I LP.
             LOG(debug) << "*** PHASE I ***";
             m_lp.initialize_tableau();
 
             // Objective function: sum of artificial variables.
             m_lp.vector_c.setZero();
-            for (int i = 0; i < art_var_id; i++)
+            for (size_t i = 0u; i < art_var_id; i++)
             {
-                const auto var_name = LinearProgram::get_artificial_variable(i);
+                const std::string var_name(ARTIFICIAL + std::to_string(i));
                 m_lp.vector_c[m_lp.variable_name_to_id[var_name]] = 1.0;
             }
 
-            // TODO: filling the non-basic columns (the passed initial basis may contain only the basic indices)
-            for (auto i = 0u; i < m_lp.get_num_vars(); i++)
-            {
-                if (!init_basis.contains(i))
-                {
-                    init_basis.insert_to_non_basic(i);
-                }
-            }
+            fill_non_basic_variables(init_basis, m_lp);
 
-            // m_lp.print_tableau();
             m_simplex.simplex(init_basis);
 
             // Remove artificial variables.
             for (auto & [label, constraint] : m_lp.constraints)
             {
-                const auto it = m_lp.m_artificials.find(label);
-                if (it == m_lp.m_artificials.end())
+                const auto it = m_artificials.find(label);
+                if (it == m_artificials.end())
                 {
                     continue;
                 }
@@ -70,7 +109,7 @@ namespace simplex
                     // }
 
                     std::stringstream msg;
-                    msg << "Artificial variable " << var_name << " in the basis.";
+                    msg << "artificial variable " << var_name << " in the basis.";
                     throw msg.str().c_str();
                 }
 
@@ -89,16 +128,9 @@ namespace simplex
         }
         else
         {
-            LOG(debug) << "Using slacks for initial basis, skipping Phase I.";
+            LOG(debug) << "Using all slacks for initial basis, skipping Phase I.";
 
-            // TODO: filling the non-basic columns (the passed initial basis may contain only the basic indices)
-            for (auto i = 0u; i < m_lp.get_num_vars(); i++)
-            {
-                if (!init_basis.contains(i))
-                {
-                    init_basis.insert_to_non_basic(i);
-                }
-            }
+            fill_non_basic_variables(init_basis, m_lp);
         }
 
         return init_basis;
